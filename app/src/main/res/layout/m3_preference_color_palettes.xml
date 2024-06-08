@@ -14,9 +14,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:clipToPadding="false"
+        android:nestedScrollingEnabled="false"
         android:orientation="horizontal"
+        android:paddingHorizontal="26dp"
         android:paddingVertical="10dp"
-        android:paddingStart="26dp"
-        android:paddingEnd="26dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 </LinearLayout>

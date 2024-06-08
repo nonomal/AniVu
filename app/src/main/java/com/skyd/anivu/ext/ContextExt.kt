@@ -8,7 +8,9 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Point
 import android.os.Build
+import android.view.Window
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
 
 val Context.activity: Activity
     get() {
@@ -22,6 +24,18 @@ val Context.tryActivity: Activity?
         while (ctx is ContextWrapper) {
             if (ctx is Activity) {
                 return ctx
+            }
+            ctx = ctx.baseContext
+        }
+        return null
+    }
+
+val Context.tryWindow: Window?
+    get() {
+        var ctx = this
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) {
+                return ctx.window
             }
             ctx = ctx.baseContext
         }
@@ -64,6 +78,19 @@ fun Context.getAppVersionName(): String {
     return appVersionName
 }
 
+fun Context.getAppVersionCode(): Long {
+    var appVersionCode: Long = 0
+    try {
+        val packageInfo = applicationContext
+            .packageManager
+            .getPackageInfo(packageName, 0)
+        appVersionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
+    } catch (e: PackageManager.NameNotFoundException) {
+        e.printStackTrace()
+    }
+    return appVersionCode
+}
+
 fun Context.getAppName(): String? {
     return try {
         val packageInfo: PackageInfo = packageManager.getPackageInfo(packageName, 0)
@@ -73,4 +100,9 @@ fun Context.getAppName(): String? {
         e.printStackTrace()
         null
     }
+}
+
+fun Context.inDarkMode(): Boolean {
+    return (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
 }

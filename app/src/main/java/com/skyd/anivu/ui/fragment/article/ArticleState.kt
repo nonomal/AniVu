@@ -2,22 +2,41 @@ package com.skyd.anivu.ui.fragment.article
 
 import androidx.paging.PagingData
 import com.skyd.anivu.base.mvi.MviViewState
-import com.skyd.anivu.model.bean.ArticleBean
+import com.skyd.anivu.model.bean.ArticleWithFeed
+import com.skyd.anivu.model.repository.ArticleSort
+import kotlinx.coroutines.flow.Flow
 
 data class ArticleState(
+    val articleFilterState: ArticleFilterState,
     val articleListState: ArticleListState,
     val loadingDialog: Boolean,
 ) : MviViewState {
     companion object {
         fun initial() = ArticleState(
-            articleListState = ArticleListState.Init,
+            articleFilterState = ArticleFilterState(),
+            articleListState = ArticleListState.Init(),
             loadingDialog = false,
         )
     }
 }
 
-sealed class ArticleListState(var loading: Boolean = false) {
-    class Success(val articlePagingData: PagingData<ArticleBean>) : ArticleListState()
-    data object Init : ArticleListState()
-    data class Failed(val msg: String) : ArticleListState()
+data class ArticleFilterState(
+    val favoriteFilter: Boolean? = null,
+    val readFilter: Boolean? = null,
+    val sortFilter: ArticleSort = ArticleSort.default,
+) {
+    val filterCount: Int
+        get() = listOfNotNull(favoriteFilter, readFilter).size +
+                if (sortFilter == ArticleSort.default) 0 else 1
+}
+
+sealed class ArticleListState(open val loading: Boolean = false) {
+    data class Success(
+        val articlePagingDataFlow: Flow<PagingData<ArticleWithFeed>>,
+        override val loading: Boolean = false
+    ) : ArticleListState()
+
+    data class Init(override val loading: Boolean = false) : ArticleListState()
+    data class Failed(val msg: String, override val loading: Boolean = false) :
+        ArticleListState()
 }

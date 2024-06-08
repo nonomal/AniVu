@@ -10,8 +10,8 @@ import androidx.work.WorkManager
 import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.Futures
 import com.skyd.anivu.ext.dataStore
-import com.skyd.anivu.model.preference.autodelete.AutoDeleteArticleFrequencyPreference
-import com.skyd.anivu.model.preference.autodelete.UseAutoDeletePreference
+import com.skyd.anivu.model.preference.data.autodelete.AutoDeleteArticleFrequencyPreference
+import com.skyd.anivu.model.preference.data.autodelete.UseAutoDeletePreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -40,7 +40,7 @@ fun listenerDeleteArticleFrequency(context: Context) {
             )
         }.distinctUntilChanged().combine(
             WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWorkFlow(DeleteArticleWorker.uniqueWorkName)
+                .getWorkInfosForUniqueWorkFlow(DeleteArticleWorker.UNIQUE_WORK_NAME)
                 .distinctUntilChanged(),
         ) { deleteArticleConfiguration, workInfos ->
             val workInfo = workInfos.firstOrNull()
@@ -103,7 +103,7 @@ fun startRssSyncWorker(
     deleteArticleFrequency: Long,
 ) {
     WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-        DeleteArticleWorker.uniqueWorkName,
+        DeleteArticleWorker.UNIQUE_WORK_NAME,
         ExistingPeriodicWorkPolicy.KEEP,
         getDeleteArticleWorkRequest(
             deleteArticleFrequency = deleteArticleFrequency,
@@ -112,7 +112,7 @@ fun startRssSyncWorker(
 }
 
 fun stopDeleteArticleWorker(context: Context) {
-    WorkManager.getInstance(context).cancelUniqueWork(DeleteArticleWorker.uniqueWorkName)
+    WorkManager.getInstance(context).cancelUniqueWork(DeleteArticleWorker.UNIQUE_WORK_NAME)
 }
 
 fun getDeleteArticleWorkRequest(

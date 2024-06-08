@@ -38,19 +38,22 @@ import java.io.IOException
 
 fun doIfMagnetOrTorrentLink(
     link: String,
-    onMagnet: (String) -> Unit,
-    onTorrent: (String) -> Unit,
-    onUnsupported: (String) -> Unit = {},
+    onMagnet: ((String) -> Unit)? = null,
+    onTorrent: ((String) -> Unit)? = null,
+    onSupported: ((String) -> Unit)? = null,
+    onUnsupported: ((String) -> Unit)? = null,
 ) {
     if (link.startsWith("magnet:")) {
-        onMagnet(link)
+        onMagnet?.invoke(link)
+        onSupported?.invoke(link)
     } else if (
         (link.startsWith("http:") || link.startsWith("https:")) &&
         link.endsWith(".torrent")
     ) {
-        onTorrent(link)
+        onTorrent?.invoke(link)
+        onSupported?.invoke(link)
     } else {
-        onUnsupported(link)
+        onUnsupported?.invoke(link)
     }
 }
 
@@ -109,8 +112,11 @@ internal fun initProxySettings(context: Context, settings: SettingsPack): Settin
         settings_pack.int_types.proxy_port.swigValue(),
         proxyPort
     ).run {
-        if (proxyUsername.isBlank() || proxyPassword.isBlank()) this
-        else {
+        if (proxyUsername.isBlank() || proxyPassword.isBlank()) {
+            clear(settings_pack.string_types.proxy_username.swigValue())
+            clear(settings_pack.string_types.proxy_password.swigValue())
+            this
+        } else {
             setString(
                 settings_pack.string_types.proxy_username.swigValue(),
                 proxyUsername

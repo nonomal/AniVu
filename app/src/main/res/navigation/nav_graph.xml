@@ -8,14 +8,12 @@
     <fragment
         android:id="@+id/main_fragment"
         android:name="com.skyd.anivu.ui.fragment.MainFragment"
-        android:label="@string/main_fragment_name"
-        tools:layout="@layout/fragment_main" />
+        android:label="@string/main_fragment_name" />
 
     <fragment
         android:id="@+id/article_fragment"
         android:name="com.skyd.anivu.ui.fragment.article.ArticleFragment"
-        android:label="@string/article_fragment_name"
-        tools:layout="@layout/fragment_article">
+        android:label="@string/article_screen_name">
 
         <argument
             android:name="feedUrl"
@@ -53,8 +51,7 @@
     <fragment
         android:id="@+id/video_fragment"
         android:name="com.skyd.anivu.ui.fragment.media.MediaFragment"
-        android:label="@string/media_fragment_name"
-        tools:layout="@layout/fragment_media">
+        android:label="@string/media_screen_name">
 
         <argument
             android:name="path"
@@ -72,8 +69,7 @@
     <fragment
         android:id="@+id/about_fragment"
         android:name="com.skyd.anivu.ui.fragment.about.AboutFragment"
-        android:label="@string/about_fragment_name"
-        tools:layout="@layout/fragment_about" />
+        android:label="@string/about_screen_name" />
     <action
         android:id="@+id/action_to_about_fragment"
         app:destination="@id/about_fragment" />
@@ -81,8 +77,7 @@
     <fragment
         android:id="@+id/license_fragment"
         android:name="com.skyd.anivu.ui.fragment.license.LicenseFragment"
-        android:label="@string/license_fragment_name"
-        tools:layout="@layout/fragment_license" />
+        android:label="@string/license_screen_name" />
     <action
         android:id="@+id/action_to_license_fragment"
         app:destination="@id/license_fragment" />
@@ -90,8 +85,7 @@
     <fragment
         android:id="@+id/search_fragment"
         android:name="com.skyd.anivu.ui.fragment.search.SearchFragment"
-        android:label="@string/search_fragment_name"
-        tools:layout="@layout/fragment_search" />
+        android:label="@string/search_screen_name" />
     <action
         android:id="@+id/action_to_search_fragment"
         app:destination="@id/search_fragment" />
@@ -99,7 +93,7 @@
     <fragment
         android:id="@+id/settings_fragment"
         android:name="com.skyd.anivu.ui.fragment.settings.SettingsFragment"
-        android:label="@string/settings_fragment_name"
+        android:label="@string/settings_screen_name"
         tools:layout="@layout/fragment_settings" />
     <action
         android:id="@+id/action_to_settings_fragment"
@@ -140,7 +134,7 @@
     <fragment
         android:id="@+id/auto_delete_article_fragment"
         android:name="com.skyd.anivu.ui.fragment.settings.data.autodelete.AutoDeleteArticleFragment"
-        android:label="@string/auto_delete_article_fragment_name" />
+        android:label="@string/auto_delete_screen_name" />
     <action
         android:id="@+id/action_to_auto_delete_article_fragment"
         app:destination="@id/auto_delete_article_fragment" />
@@ -160,4 +154,68 @@
     <action
         android:id="@+id/action_to_appearance_fragment"
         app:destination="@id/appearance_fragment" />
+
+    <fragment
+        android:id="@+id/behavior_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.behavior.BehaviorFragment"
+        android:label="@string/behavior_screen_name" />
+    <action
+        android:id="@+id/action_to_behavior_fragment"
+        app:destination="@id/behavior_fragment" />
+
+    <fragment
+        android:id="@+id/feed_style_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.appearance.feed.FeedStyleFragment"
+        android:label="@string/feed_style_screen_name" />
+    <action
+        android:id="@+id/action_to_feed_style_fragment"
+        app:destination="@id/feed_style_fragment" />
+
+    <fragment
+        android:id="@+id/player_config_advanced_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.playerconfig.advanced.PlayerConfigAdvancedFragment"
+        android:label="@string/player_config_advanced_screen_name" />
+    <action
+        android:id="@+id/action_to_player_config_advanced_fragment"
+        app:destination="@id/player_config_advanced_fragment" />
+
+    <fragment
+        android:id="@+id/import_export_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.data.importexport.ImportExportFragment"
+        android:label="@string/import_export_screen_name" />
+    <action
+        android:id="@+id/action_to_import_export_fragment"
+        app:destination="@id/import_export_fragment" />
+
+    <fragment
+        android:id="@+id/export_opml_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.data.importexport.exportopml.ExportOpmlFragment"
+        android:label="@string/export_opml_screen_name" />
+    <action
+        android:id="@+id/action_to_export_opml_fragment"
+        app:destination="@id/export_opml_fragment" />
+
+    <fragment
+        android:id="@+id/import_opml_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.data.importexport.importopml.ImportOpmlFragment"
+        android:label="@string/import_opml_screen_name" />
+    <action
+        android:id="@+id/action_to_import_opml_fragment"
+        app:destination="@id/import_opml_fragment" />
+
+    <fragment
+        android:id="@+id/article_style_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.appearance.article.ArticleStyleFragment"
+        android:label="@string/article_style_screen_name" />
+    <action
+        android:id="@+id/action_to_article_style_fragment"
+        app:destination="@id/article_style_fragment" />
+
+    <fragment
+        android:id="@+id/search_style_fragment"
+        android:name="com.skyd.anivu.ui.fragment.settings.appearance.search.SearchStyleFragment"
+        android:label="@string/search_style_screen_name" />
+    <action
+        android:id="@+id/action_to_search_style_fragment"
+        app:destination="@id/search_style_fragment" />
 </navigation>
