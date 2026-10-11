@@ -1,0 +1,18 @@
+package com.skyd.podaura.ui.screen.search
+
+import com.skyd.mvi.MviSingleEvent
+
+sealed interface SearchEvent : MviSingleEvent {
+    sealed interface FavoriteArticleResultEvent : SearchEvent {
+        data class Failed(val msg: String) : FavoriteArticleResultEvent
+    }
+
+    sealed interface ReadArticleResultEvent : SearchEvent {
+        data class Failed(val msg: String) : ReadArticleResultEvent
+    }
+
+    sealed interface DeleteArticleResultEvent : SearchEvent {
+        data object ProtectedByDownload : DeleteArticleResultEvent
+        data class Failed(val msg: String) : DeleteArticleResultEvent
+    }
+}

@@ -1,0 +1,142 @@
+package com.skyd.podaura.ui.screen.media.sub
+
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.navigation3.runtime.NavKey
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.dialog.ComponeDialog
+import com.skyd.compone.component.navigation.LocalNavBackStack
+import com.skyd.podaura.model.bean.MediaBean
+import com.skyd.podaura.model.preference.behavior.media.BaseMediaListSortByPreference
+import com.skyd.podaura.model.preference.behavior.media.MediaSubListSortAscPreference
+import com.skyd.podaura.model.preference.behavior.media.MediaSubListSortByPreference
+import com.skyd.podaura.ui.component.dialog.SortDialog
+import com.skyd.podaura.ui.screen.media.list.MediaList
+import com.skyd.podaura.ui.screen.media.search.MediaSearchRoute
+import io.github.vinceglb.filekit.exists
+import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.stringResource
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.exit
+import podaura.shared.generated.resources.media_screen_search_hint
+import podaura.shared.generated.resources.sort
+import podaura.shared.generated.resources.sub_media_screen_path_illegal
+import podaura.shared.generated.resources.warning
+
+
+@Serializable
+data class SubMediaRoute(val media: MediaBean) : NavKey {
+    companion object {
+        @Composable
+        fun SubMediaLauncher(route: SubMediaRoute) {
+            SubMediaScreenRoute(media = route.media)
+        }
+    }
+}
+
+@Composable
+fun SubMediaScreenRoute(media: MediaBean?) {
+    val navBackStack = LocalNavBackStack.current
+    if (media == null || !media.path.exists() || !media.isDir) {
+        ComponeDialog(
+            icon = {
+                Icon(imageVector = Icons.Outlined.WarningAmber, contentDescription = null)
+            },
+            title = { Text(text = stringResource(Res.string.warning)) },
+            text = { Text(text = stringResource(Res.string.sub_media_screen_path_illegal)) },
+            confirmButton = {
+                TextButton(onClick = navBackStack::removeLastOrNull) {
+                    Text(text = stringResource(Res.string.exit))
+                }
+            },
+        )
+    } else {
+        SubMediaScreen(media)
+    }
+}
+
+@Composable
+private fun SubMediaScreen(media: MediaBean) {
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val navBackStack = LocalNavBackStack.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    var showSortMediaDialog by rememberSaveable { mutableStateOf(false) }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.LargeFlexible,
+                scrollBehavior = scrollBehavior,
+                title = {
+                    Text(
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                        text = media.displayName ?: media.name,
+                        maxLines = 1,
+                    )
+                },
+                actions = {
+                    ComponeIconButton(
+                        onClick = {
+                            navBackStack.add(
+                                MediaSearchRoute(path = media.filePath, isSubList = true)
+                            )
+                        },
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = stringResource(Res.string.media_screen_search_hint),
+                    )
+                    ComponeIconButton(
+                        onClick = { showSortMediaDialog = true },
+                        imageVector = Icons.AutoMirrored.Outlined.Sort,
+                        contentDescription = stringResource(Res.string.sort),
+                    )
+                }
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing
+    ) { innerPadding ->
+        MediaList(
+            modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+            snackbarHostState = snackbarHostState,
+            contentPadding = innerPadding,
+            path = media.filePath,
+            isSubList = true,
+        )
+    }
+
+    SortDialog(
+        visible = showSortMediaDialog,
+        onDismissRequest = { showSortMediaDialog = false },
+        sortByValues = MediaSubListSortByPreference.values,
+        sortBy = MediaSubListSortByPreference.current,
+        sortAsc = MediaSubListSortAscPreference.current,
+        onSortBy = { MediaSubListSortByPreference.put(scope, it) },
+        onSortAsc = { MediaSubListSortAscPreference.put(scope, it) },
+        onSortByDisplayName = { BaseMediaListSortByPreference.toDisplayName(it) },
+        onSortByIcon = { BaseMediaListSortByPreference.toIcon(it) },
+    )
+}

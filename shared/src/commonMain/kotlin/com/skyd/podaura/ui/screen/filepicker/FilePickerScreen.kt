@@ -1,0 +1,341 @@
+package com.skyd.podaura.ui.screen.filepicker
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.NavigateNext
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.ComponeScaffold
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.navigation.LocalNavBackStack
+import com.skyd.compone.component.navigation.LocalResultStore
+import com.skyd.compone.ext.onlyHorizontal
+import com.skyd.compone.ext.withoutBottom
+import com.skyd.compone.ext.withoutTop
+import com.skyd.fundation.config.Const
+import com.skyd.fundation.config.DEFAULT_FILE_PICKER_PATH
+import com.skyd.fundation.ext.isDirectory
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.model.preference.data.medialib.MediaLibLocationPreference
+import com.skyd.podaura.util.fileicon.fileIcon
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemPathSeparator
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.close
+import podaura.shared.generated.resources.file_picker_screen_internal_storage
+import podaura.shared.generated.resources.file_picker_screen_open_file
+import podaura.shared.generated.resources.file_picker_screen_open_folder
+import podaura.shared.generated.resources.file_picker_screen_pick
+
+
+const val FILE_PICKER_NEW_PATH_KEY = "newPath"
+
+@Composable
+fun ListenToFilePicker(onNewPath: CoroutineScope.(FilePickerResult) -> Unit) {
+    val resultStore = LocalResultStore.current
+    val result = resultStore.getResult<FilePickerResult?>(FILE_PICKER_NEW_PATH_KEY)
+    LaunchedEffect(result) {
+        if (result != null) {
+            onNewPath(result)
+            resultStore.removeResult<FilePickerResult?>(FILE_PICKER_NEW_PATH_KEY)
+        }
+    }
+}
+
+@Serializable
+data class FilePickerRoute(
+    val path: String,
+    val pickFolder: Boolean = true,
+    val extensionName: String = "",
+    val id: String? = null,
+) : NavKey {
+    companion object {
+        @Composable
+        fun FilePickerLauncher(
+            route: FilePickerRoute,
+            windowInsets: WindowInsets = WindowInsets.safeDrawing
+        ) {
+            FilePickerScreen(
+                path = route.path.takeIf {
+                    route.path != MediaLibLocationPreference.default
+                } ?: Const.DEFAULT_FILE_PICKER_PATH,
+                pickFolder = route.pickFolder,
+                extensionName = route.extensionName,
+                id = route.id,
+                windowInsets = windowInsets
+            )
+        }
+    }
+}
+
+@Serializable
+data class FilePickerResult(
+    val id: String?,
+    val path: String,
+    val pickFolder: Boolean,
+    val extensionName: String?,
+    val result: String,
+) {
+    fun toJson(): String = Json.encodeToString(this)
+}
+
+@Composable
+fun FilePickerScreen(
+    path: String,
+    pickFolder: Boolean = false,
+    extensionName: String? = null,
+    id: String?,
+    viewModel: FilePickerViewModel = koinViewModel(),
+    windowInsets: WindowInsets = WindowInsets.safeDrawing
+) {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    val snackbarHostState = remember { SnackbarHostState() }
+    val navBackStack = LocalNavBackStack.current
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+    val dispatch = viewModel.getDispatcher(
+        startWith = FilePickerIntent.NewLocation(
+            path = path,
+            extensionName = extensionName,
+        )
+    )
+
+    val navigationEventState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = navigationEventState,
+        onBackCompleted = {
+            val current = Path(uiState.path)
+            val parent = current.parent?.toString()
+            if (!parent.isNullOrBlank() &&
+                uiState.path != Const.DEFAULT_FILE_PICKER_PATH &&
+                uiState.path.startsWith(Const.DEFAULT_FILE_PICKER_PATH)
+            ) {
+                dispatch(FilePickerIntent.NewLocation(parent))
+            } else {
+                navBackStack.removeLastOrNull()
+            }
+        }
+    )
+
+    ComponeScaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.Small,
+                scrollBehavior = scrollBehavior,
+                title = {
+                    Text(
+                        text = stringResource(
+                            if (pickFolder) Res.string.file_picker_screen_open_folder
+                            else Res.string.file_picker_screen_open_file
+                        )
+                    )
+                },
+                navigationIcon = {
+                    ComponeIconButton(
+                        onClick = navBackStack::removeLastOrNull,
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = stringResource(Res.string.close),
+                    )
+                },
+                actions = {
+                    ComponeIconButton(
+                        onClick = { dispatch(FilePickerIntent.NewLocation(Const.DEFAULT_FILE_PICKER_PATH)) },
+                        imageVector = Icons.Outlined.PhoneAndroid,
+                        contentDescription = stringResource(Res.string.file_picker_screen_internal_storage),
+                    )
+                },
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+        },
+        contentWindowInsets = windowInsets
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(top = innerPadding.calculateTopPadding())) {
+            PathLevelIndication(
+                path = uiState.path,
+                onRouteTo = { dispatch(FilePickerIntent.NewLocation(it)) },
+                contentPadding = innerPadding.onlyHorizontal()
+            )
+            val resultStore = LocalResultStore.current
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = innerPadding.withoutTop().run {
+                    if (pickFolder) withoutBottom() else this
+                }
+            ) {
+                (uiState.fileListState as? FileListState.Success)?.list?.forEach { filePath ->
+                    item {
+                        ListItem(
+                            modifier = Modifier.clickable {
+                                if (filePath.isDirectory) {
+                                    dispatch(FilePickerIntent.NewLocation(filePath.toString()))
+                                } else {
+                                    if (!pickFolder) {
+                                        resultStore.setResult(
+                                            FILE_PICKER_NEW_PATH_KEY,
+                                            FilePickerResult(
+                                                id = id,
+                                                path = path,
+                                                pickFolder = false,
+                                                extensionName = extensionName,
+                                                result = filePath.toString(),
+                                            )
+                                        )
+                                        navBackStack.removeLastOrNull()
+                                    }
+                                }
+                            },
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(
+                                        remember(filePath) { filePath.fileIcon().resource }
+                                    ),
+                                    contentDescription = null,
+                                )
+                            },
+                            headlineContent = { Text(text = filePath.name) },
+                        )
+                    }
+                }
+            }
+
+            if (pickFolder) {
+                Button(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp, horizontal = 16.dp)
+                        .padding(innerPadding.withoutTop())
+                        .fillMaxWidth(),
+                    onClick = {
+                        resultStore.setResult(
+                            FILE_PICKER_NEW_PATH_KEY,
+                            FilePickerResult(
+                                id = id,
+                                path = path,
+                                pickFolder = true,
+                                extensionName = extensionName,
+                                result = uiState.path,
+                            )
+                        )
+                        navBackStack.removeLastOrNull()
+                    },
+                ) {
+                    Text(text = stringResource(Res.string.file_picker_screen_pick))
+                }
+            }
+        }
+
+        MviEventListener(viewModel.singleEvent) { event ->
+            when (event) {
+                is FilePickerEvent.FileListResultEvent.Failed ->
+                    snackbarHostState.showSnackbar(event.msg)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PathLevelIndication(
+    path: String,
+    onRouteTo: (String) -> Unit,
+    contentPadding: PaddingValues = PaddingValues()
+) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(scrollState.maxValue) {
+        if (scrollState.canScrollForward) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+    Row(
+        modifier = Modifier
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 12.dp)
+            .padding(contentPadding)
+            .animateContentSize(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val items = remember(path) {
+            mutableListOf<String>().apply {
+                var newPath = path
+                if (newPath.startsWith(Const.DEFAULT_FILE_PICKER_PATH)) {
+                    add(Const.DEFAULT_FILE_PICKER_PATH)
+                    newPath = newPath.removePrefix(Const.DEFAULT_FILE_PICKER_PATH)
+                }
+                newPath.removeSurrounding(SystemPathSeparator.toString())
+                newPath.split(SystemPathSeparator).forEach {
+                    if (it.isNotBlank()) add(it)
+                }
+            }
+        }
+
+        items.forEachIndexed { index, item ->
+            Text(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .clickable {
+                        onRouteTo(
+                            items
+                                .subList(0, index + 1)
+                                .joinToString(SystemPathSeparator.toString())
+                        )
+                    }
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                text = item,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            if (index != items.size - 1) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.NavigateNext,
+                    contentDescription = null,
+                )
+            }
+        }
+    }
+}

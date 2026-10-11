@@ -1,0 +1,257 @@
+package com.skyd.podaura.ui.player.port.controller
+
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.skyd.compone.ext.thenIf
+import com.skyd.podaura.ext.mirror
+import com.skyd.podaura.model.preference.player.PlayerForwardSecondsPreference
+import com.skyd.podaura.model.preference.player.PlayerReplaySecondsPreference
+import com.skyd.podaura.ui.component.LongClickListener
+import com.skyd.podaura.ui.component.shape.CurlyCornerShape
+import com.skyd.podaura.ui.player.component.state.PlayState
+import com.skyd.podaura.ui.player.component.state.PlayStateCallback
+import com.skyd.podaura.ui.player.component.state.dialog.OnDialogVisibilityChanged
+import com.skyd.podaura.ui.player.port.PLAYER_PRESENTATION_CROSSFADE_MILLIS
+import org.jetbrains.compose.resources.stringResource
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.pause
+import podaura.shared.generated.resources.play
+import podaura.shared.generated.resources.player_forward_seconds_content_description
+import podaura.shared.generated.resources.player_replay_seconds_content_description
+import podaura.shared.generated.resources.retry
+import podaura.shared.generated.resources.skip_next
+import podaura.shared.generated.resources.skip_previous
+import kotlin.math.abs
+
+
+@Composable
+internal fun Controller(
+    playState: PlayState,
+    playStateCallback: PlayStateCallback,
+    modifier: Modifier = Modifier,
+    onDialogVisibilityChanged: OnDialogVisibilityChanged,
+    enabled: Boolean = true,
+    primaryControlMode: PrimaryControlMode = PrimaryControlMode.Playback,
+    onRetry: () -> Unit = {},
+) {
+    val density = LocalDensity.current
+    val animatePlayButtonShapeAmp by animateDpAsState(
+        if (playState.isPlaying) 1.6.dp else 0.dp,
+        label = "animatePlayButtonShapeAmp",
+    )
+    val animatePlayButtonShapeCount by animateFloatAsState(
+        if (playState.isPlaying) 12f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "animatePlayButtonShapeCount",
+    )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SmallerCircleButton(
+            imageVector = Icons.Outlined.SkipPrevious,
+            contentDescription = stringResource(Res.string.skip_previous),
+            enabled = enabled && !playState.playlistFirst,
+            onClick = playStateCallback.onPreviousMedia,
+        )
+        // -seconds
+        ForwardOrReplayButton(
+            seconds = PlayerReplaySecondsPreference.current,
+            contentDescription = stringResource(Res.string.player_replay_seconds_content_description),
+            enabled = enabled && playState.mediaLoaded,
+            playStateCallback = playStateCallback,
+            onLongClick = { onDialogVisibilityChanged.onReplaySecondDialog(true) },
+        )
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 6.dp)
+                .size(76.dp)
+                .clip(
+                    CurlyCornerShape(
+                        amp = with(density) { animatePlayButtonShapeAmp.toPx() },
+                        count = animatePlayButtonShapeCount,
+                    )
+                )
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest, shape = CircleShape)
+                .clickable(
+                    enabled = enabled || primaryControlMode == PrimaryControlMode.Retry,
+                    onClick = {
+                        if (primaryControlMode == PrimaryControlMode.Retry) onRetry()
+                        else playStateCallback.onPlayStateChanged()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            val controlState = when {
+                primaryControlMode == PrimaryControlMode.Loading -> PrimaryControlState.Loading
+                primaryControlMode == PrimaryControlMode.Retry -> PrimaryControlState.Retry
+                playState.loading -> PrimaryControlState.Loading
+                playState.isPlaying -> PrimaryControlState.Pause
+                else -> PrimaryControlState.Play
+            }
+            Crossfade(
+                targetState = controlState,
+                animationSpec = tween(PLAYER_PRESENTATION_CROSSFADE_MILLIS),
+                label = "playerPrimaryControl",
+            ) { state ->
+                Box(
+                    modifier = Modifier.size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (state) {
+                        PrimaryControlState.Loading ->
+                            LoadingIndicator(modifier = Modifier.size(40.dp))
+
+                        PrimaryControlState.Retry -> Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(Res.string.retry),
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+
+                        PrimaryControlState.Pause,
+                        PrimaryControlState.Play -> Icon(
+                            imageVector = if (state == PrimaryControlState.Pause) {
+                                Icons.Filled.Pause
+                            } else {
+                                Icons.Filled.PlayArrow
+                            },
+                            contentDescription = stringResource(
+                                if (state == PrimaryControlState.Pause) Res.string.pause
+                                else Res.string.play
+                            ),
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+        }
+        // +seconds
+        ForwardOrReplayButton(
+            seconds = PlayerForwardSecondsPreference.current,
+            contentDescription = stringResource(Res.string.player_forward_seconds_content_description),
+            enabled = enabled && playState.mediaLoaded,
+            playStateCallback = playStateCallback,
+            onLongClick = { onDialogVisibilityChanged.onForwardSecondDialog(true) },
+        )
+        SmallerCircleButton(
+            imageVector = Icons.Outlined.SkipNext,
+            contentDescription = stringResource(Res.string.skip_next),
+            enabled = enabled && !playState.playlistLast,
+            onClick = playStateCallback.onNextMedia,
+        )
+    }
+}
+
+internal enum class PrimaryControlMode {
+    Playback,
+    Loading,
+    Retry,
+}
+
+private enum class PrimaryControlState {
+    Loading,
+    Retry,
+    Pause,
+    Play,
+}
+
+@Composable
+private fun ForwardOrReplayButton(
+    seconds: Int,
+    contentDescription: String?,
+    enabled: Boolean,
+    playStateCallback: PlayStateCallback,
+    onLongClick: () -> Unit,
+) {
+    Box(contentAlignment = Alignment.Center) {
+        SmallerCircleButton(
+            imageVector = Icons.Outlined.Replay,
+            contentDescription = contentDescription,
+            mirrorIcon = seconds >= 0,
+            enabled = enabled,
+            onLongClick = onLongClick,
+            onClick = { playStateCallback.onSeekBy(seconds.toLong()) },
+        )
+        Text(
+            text = abs(seconds).toString(),
+            modifier = Modifier.padding(top = 5.dp),
+            color = LocalContentColor.current.copy(alpha = if (enabled) 1f else 0.38f),
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = if (abs(seconds) >= 100) 6.sp else 9.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun SmallerCircleButton(
+    imageVector: ImageVector,
+    contentDescription: String?,
+    iconSize: Dp = 32.dp,
+    mirrorIcon: Boolean = false,
+    enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    LongClickListener(
+        interactionSource = interactionSource,
+        onLongClick = onLongClick,
+        onClick = onClick,
+    )
+    IconButton(
+        modifier = Modifier.size(46.dp),
+        onClick = {},
+        enabled = enabled,
+        interactionSource = interactionSource,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .size(iconSize)
+                .thenIf(mirrorIcon) { mirror() },
+        )
+    }
+}

@@ -1,0 +1,92 @@
+package com.skyd.podaura.ui.component
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.DefaultAlpha
+import androidx.compose.ui.layout.ContentScale
+import co.touchlab.kermit.Severity
+import co.touchlab.kermit.coil.KermitCoilLogger
+import co.touchlab.kermit.loggerConfigInit
+import co.touchlab.kermit.platformLogWriter
+import coil3.ComponentRegistry
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.compose.LocalPlatformContext
+import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
+import com.skyd.fundation.di.get
+import com.skyd.podaura.util.coil.localmedia.LocalMedia
+import com.skyd.podaura.util.coil.localmedia.LocalMediaImageLogger
+import com.skyd.podaura.util.coil.localmedia.addLocalMediaComponents
+import io.ktor.client.HttpClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import org.koin.core.qualifier.named
+
+fun imageRequest(model: Any?, context: PlatformContext) = ImageRequest.Builder(context)
+    .diskCachePolicy(CachePolicy.ENABLED)
+    .memoryCachePolicy(CachePolicy.ENABLED)
+    .data(model)
+    .apply {
+        if (model is LocalMedia) {
+            interceptorCoroutineContext(Dispatchers.IO)
+        }
+    }
+    .crossfade(true)
+    .build()
+
+@Composable
+fun PodAuraImage(
+    model: Any?,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    imageLoader: ImageLoader = rememberPodAuraImageLoader(),
+    contentScale: ContentScale = ContentScale.FillWidth,
+    alpha: Float = DefaultAlpha,
+    colorFilter: ColorFilter? = null,
+    onError: ((AsyncImagePainter.State.Error) -> Unit)? = null,
+) {
+    AsyncImage(
+        model = if (model is ImageRequest) {
+            model
+        } else {
+            val context = LocalPlatformContext.current
+            remember(model) { imageRequest(model, context) }
+        },
+        modifier = modifier,
+        contentDescription = contentDescription,
+        contentScale = contentScale,
+        imageLoader = imageLoader,
+        alpha = alpha,
+        colorFilter = colorFilter,
+        onError = onError,
+    )
+}
+
+@Composable
+fun rememberPodAuraImageLoader(): ImageLoader = remember { get<ImageLoader>() }
+
+expect fun ImageLoader.Builder.platformComponents()
+
+fun PlatformContext.imageLoaderBuilder(
+    components: ComponentRegistry.Builder.() -> Unit = {},
+): ImageLoader.Builder = ImageLoader.Builder(this).apply { platformComponents() }.components {
+    add(SvgDecoder.Factory())
+    add(KtorNetworkFetcherFactory(httpClient = get<HttpClient>(named("coil"))))
+    addLocalMediaComponents()
+    components()
+}.logger(
+    LocalMediaImageLogger(
+        KermitCoilLogger(
+            config = loggerConfigInit(platformLogWriter(), minSeverity = Severity.Info),
+            separator = ":",
+        )
+    )
+)

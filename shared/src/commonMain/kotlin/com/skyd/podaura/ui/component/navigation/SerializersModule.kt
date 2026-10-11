@@ -1,0 +1,109 @@
+package com.skyd.podaura.ui.component.navigation
+
+import androidx.navigation3.runtime.NavKey
+import com.skyd.podaura.ui.screen.MainRoute
+import com.skyd.podaura.ui.screen.about.AboutRoute
+import com.skyd.podaura.ui.screen.about.TermsOfServiceRoute
+import com.skyd.podaura.ui.screen.about.license.LicenseRoute
+import com.skyd.podaura.ui.screen.article.ArticleRoute
+import com.skyd.podaura.ui.screen.calendar.CalendarRoute
+import com.skyd.podaura.ui.screen.download.DownloadDeepLinkRoute
+import com.skyd.podaura.ui.screen.download.DownloadRoute
+import com.skyd.podaura.ui.screen.feed.FeedListRoute
+import com.skyd.podaura.ui.screen.feed.FeedRoute
+import com.skyd.podaura.ui.screen.feed.autodl.AutoDownloadRuleRoute
+import com.skyd.podaura.ui.screen.feed.mute.MuteFeedRoute
+import com.skyd.podaura.ui.screen.feed.reorder.feed.ReorderFeedRoute
+import com.skyd.podaura.ui.screen.feed.reorder.group.ReorderGroupRoute
+import com.skyd.podaura.ui.screen.feed.requestheaders.RequestHeadersRoute
+import com.skyd.podaura.ui.screen.filepicker.FilePickerRoute
+import com.skyd.podaura.ui.screen.history.HistoryRoute
+import com.skyd.podaura.ui.screen.history.search.HistorySearchRoute
+import com.skyd.podaura.ui.screen.image.ImagePreviewRoute
+import com.skyd.podaura.ui.screen.media.MediaRoute
+import com.skyd.podaura.ui.screen.media.search.MediaSearchRoute
+import com.skyd.podaura.ui.screen.media.sub.SubMediaRoute
+import com.skyd.podaura.ui.screen.more.MoreRoute
+import com.skyd.podaura.ui.screen.playlist.PlaylistRoute
+import com.skyd.podaura.ui.screen.playlist.medialist.PlaylistMediaListRoute
+import com.skyd.podaura.ui.screen.read.ReadRoute
+import com.skyd.podaura.ui.screen.search.SearchRoute
+import com.skyd.podaura.ui.screen.settings.SettingsListRoute
+import com.skyd.podaura.ui.screen.settings.SettingsRoute
+import com.skyd.podaura.ui.screen.settings.appearance.AppearanceRoute
+import com.skyd.podaura.ui.screen.settings.appearance.article.ArticleStyleRoute
+import com.skyd.podaura.ui.screen.settings.appearance.feed.FeedStyleRoute
+import com.skyd.podaura.ui.screen.settings.appearance.media.MediaStyleRoute
+import com.skyd.podaura.ui.screen.settings.appearance.read.ReadStyleRoute
+import com.skyd.podaura.ui.screen.settings.appearance.search.SearchStyleRoute
+import com.skyd.podaura.ui.screen.settings.behavior.BehaviorRoute
+import com.skyd.podaura.ui.screen.settings.data.DataRoute
+import com.skyd.podaura.ui.screen.settings.data.autodelete.AutoDeleteRoute
+import com.skyd.podaura.ui.screen.settings.data.deleteconstraint.DeleteConstraintRoute
+import com.skyd.podaura.ui.screen.settings.data.importexport.ImportExportRoute
+import com.skyd.podaura.ui.screen.settings.data.importexport.importopml.ImportOpmlDeepLinkRoute
+import com.skyd.podaura.ui.screen.settings.data.importexport.importopml.ImportOpmlRoute
+import com.skyd.podaura.ui.screen.settings.language.AppLanguageRoute
+import com.skyd.podaura.ui.screen.settings.playerconfig.PlayerConfigRoute
+import com.skyd.podaura.ui.screen.settings.playerconfig.advanced.PlayerConfigAdvancedRoute
+import com.skyd.podaura.ui.screen.settings.rssconfig.RssConfigRoute
+import com.skyd.podaura.ui.screen.settings.rssconfig.updatenotification.UpdateNotificationRoute
+import com.skyd.podaura.ui.screen.settings.translation.TranslationSettingsRoute
+import com.skyd.podaura.ui.screen.settings.transmission.TransmissionRoute
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+
+val PodAuraSerializersModule = SerializersModule {
+    polymorphic(baseClass = NavKey::class) {
+        subclass(MainRoute::class, MainRoute.serializer())
+        subclass(FeedRoute::class, FeedRoute.serializer())
+        subclass(FeedListRoute::class, FeedListRoute.serializer())
+        subclass(ArticleRoute::class, ArticleRoute.serializer())
+        subclass(MoreRoute::class, MoreRoute.serializer())
+        subclass(LicenseRoute::class, LicenseRoute.serializer())
+        subclass(AboutRoute::class, AboutRoute.serializer())
+        subclass(TermsOfServiceRoute::class, TermsOfServiceRoute.serializer())
+        subclass(SettingsRoute::class, SettingsRoute.serializer())
+        subclass(AppearanceRoute::class, AppearanceRoute.serializer())
+        subclass(ArticleStyleRoute::class, ArticleStyleRoute.serializer())
+        subclass(FeedStyleRoute::class, FeedStyleRoute.serializer())
+        subclass(ReadStyleRoute::class, ReadStyleRoute.serializer())
+        subclass(MediaStyleRoute::class, MediaStyleRoute.serializer())
+        subclass(ReorderGroupRoute::class, ReorderGroupRoute.serializer())
+        subclass(ReorderFeedRoute::class, ReorderFeedRoute.serializer())
+        subclass(SearchStyleRoute::class, SearchStyleRoute.serializer())
+        subclass(CalendarRoute::class, CalendarRoute.serializer())
+        subclass(BehaviorRoute::class, BehaviorRoute.serializer())
+        subclass(AutoDeleteRoute::class, AutoDeleteRoute.serializer())
+        subclass(HistoryRoute::class, HistoryRoute.serializer())
+        subclass(ImagePreviewRoute::class, ImagePreviewRoute.serializer())
+        subclass(ImportOpmlRoute::class, ImportOpmlRoute.serializer())
+        subclass(ImportOpmlDeepLinkRoute::class, ImportOpmlDeepLinkRoute.serializer())
+        subclass(ImportExportRoute::class, ImportExportRoute.serializer())
+        subclass(DataRoute::class, DataRoute.serializer())
+        subclass(PlayerConfigRoute::class, PlayerConfigRoute.serializer())
+        subclass(PlayerConfigAdvancedRoute::class, PlayerConfigAdvancedRoute.serializer())
+        subclass(RssConfigRoute::class, RssConfigRoute.serializer())
+        subclass(TransmissionRoute::class, TransmissionRoute.serializer())
+        subclass(UpdateNotificationRoute::class, UpdateNotificationRoute.serializer())
+        subclass(AutoDownloadRuleRoute::class, AutoDownloadRuleRoute.serializer())
+        subclass(MuteFeedRoute::class, MuteFeedRoute.serializer())
+        subclass(DeleteConstraintRoute::class, DeleteConstraintRoute.serializer())
+        subclass(PlaylistRoute::class, PlaylistRoute.serializer())
+        subclass(PlaylistMediaListRoute::class, PlaylistMediaListRoute.serializer())
+        subclass(RequestHeadersRoute::class, RequestHeadersRoute.serializer())
+        subclass(FilePickerRoute::class, FilePickerRoute.serializer())
+        subclass(DownloadRoute::class, DownloadRoute.serializer())
+        subclass(DownloadDeepLinkRoute::class, DownloadDeepLinkRoute.serializer())
+        subclass(ReadRoute::class, ReadRoute.serializer())
+        subclass(SearchRoute.Feed::class, SearchRoute.Feed.serializer())
+        subclass(SearchRoute.Article::class, SearchRoute.Article.serializer())
+        subclass(MediaRoute::class, MediaRoute.serializer())
+        subclass(MediaSearchRoute::class, MediaSearchRoute.serializer())
+        subclass(SubMediaRoute::class, SubMediaRoute.serializer())
+        subclass(HistorySearchRoute::class, HistorySearchRoute.serializer())
+        subclass(SettingsListRoute::class, SettingsListRoute.serializer())
+        subclass(TranslationSettingsRoute::class, TranslationSettingsRoute.serializer())
+        subclass(AppLanguageRoute::class, AppLanguageRoute.serializer())
+    }
+}

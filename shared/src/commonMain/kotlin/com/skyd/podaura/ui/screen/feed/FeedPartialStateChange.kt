@@ -1,0 +1,264 @@
+package com.skyd.podaura.ui.screen.feed
+
+import androidx.paging.PagingData
+import com.skyd.podaura.model.bean.article.ArticleDeleteResult
+import com.skyd.podaura.model.bean.feed.FeedViewBean
+import com.skyd.podaura.model.bean.group.GroupVo
+import kotlinx.coroutines.flow.Flow
+
+
+internal sealed interface FeedPartialStateChange {
+    fun reduce(oldState: FeedState): FeedState
+
+    sealed interface LoadingDialog : FeedPartialStateChange {
+        data object Show : LoadingDialog {
+            override fun reduce(oldState: FeedState) = oldState.copy(loadingDialog = true)
+        }
+    }
+
+    sealed interface AddFeed : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                Loading -> oldState.copy(addFeedState = AddFeedState.Loading)
+                Saving -> oldState.copy(addFeedState = AddFeedState.Saving)
+                is Success -> oldState.copy(
+                    editFeedUrl = feed.feed.url,
+                    addFeedState = null,
+                )
+
+                is Failed, is Cancelled -> oldState.copy(
+                    addFeedState = null,
+                )
+            }
+        }
+
+        data object Loading : AddFeed
+        data object Saving : AddFeed
+        data class Cancelled(val url: String) : AddFeed
+        data class Success(val feed: FeedViewBean) : AddFeed
+        data class Failed(val msg: String) : AddFeed
+    }
+
+    data class OnEditFeedDialog(val feedUrl: String?) : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return oldState.copy(editFeedUrl = feedUrl)
+        }
+    }
+
+    data class OnEditGroupDialog(val group: GroupVo?) : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return oldState.copy(editGroupDialogBean = group)
+        }
+    }
+
+    sealed interface ReadAll : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    editFeedUrl = oldState.editFeedUrl?.let {
+                        feeds.firstOrNull { feed -> feed.feed.url == it }?.feed?.url
+                    } ?: oldState.editFeedUrl,
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data class Success(val feeds: List<FeedViewBean>) : ReadAll
+        data class Failed(val msg: String) : ReadAll
+    }
+
+    sealed interface RefreshFeed : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                Loading -> oldState.copy(refreshFeedState = RefreshFeedState.Loading)
+                Cancelling -> oldState.copy(refreshFeedState = RefreshFeedState.Cancelling)
+                is Success -> oldState.copy(
+                    editFeedUrl = oldState.editFeedUrl?.let {
+                        feeds.firstOrNull { feed -> feed.feed.url == it }?.feed?.url
+                    },
+                    refreshFeedState = null,
+                )
+
+                is Failed, Cancelled -> oldState.copy(
+                    refreshFeedState = null,
+                )
+            }
+        }
+
+        data object Loading : RefreshFeed
+        data object Cancelling : RefreshFeed
+        data object Cancelled : RefreshFeed
+        data class Success(val feeds: List<FeedViewBean>) : RefreshFeed
+        data class Failed(val msg: String) : RefreshFeed
+    }
+
+    sealed interface RefreshAllFeeds : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return oldState.copy(refreshAllFeedsInProgress = this is Started)
+        }
+
+        data object Started : RefreshAllFeeds
+        data object Success : RefreshAllFeeds
+        data class Failed(val msg: String) : RefreshAllFeeds
+    }
+
+    sealed interface CreateGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data object Success : CreateGroup
+        data class Failed(val msg: String) : CreateGroup
+    }
+
+    sealed interface GroupExpandedChanged : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState = oldState
+
+        data object Success : GroupExpandedChanged
+        data class Failed(val msg: String) : GroupExpandedChanged
+    }
+
+    sealed interface ClearGroupArticles : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data class Success(val result: ArticleDeleteResult) : ClearGroupArticles
+        data class Failed(val msg: String) : ClearGroupArticles
+    }
+
+    sealed interface DeleteGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data object Success : DeleteGroup
+        data class Failed(val msg: String) : DeleteGroup
+    }
+
+    sealed interface MoveFeedsToGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data object Success : MoveFeedsToGroup
+        data class Failed(val msg: String) : MoveFeedsToGroup
+    }
+
+    sealed interface EditGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    editGroupDialogBean = group.takeIf { oldState.editGroupDialogBean != null },
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data class Success(val group: GroupVo) : EditGroup
+        data class Failed(val msg: String) : EditGroup
+    }
+
+    sealed interface FeedList : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    allGroupCollapsed = allGroupCollapsed,
+                    groups = groups,
+                    listState = ListState.Success(dataPagingDataFlow = dataPagingDataFlow),
+                )
+
+                is Failed -> oldState.copy(
+                    listState = ListState.Failed(msg = msg),
+                )
+
+                Loading -> oldState.copy(
+                    listState = ListState.Loading,
+                )
+            }
+        }
+
+        data class Success(
+            val allGroupCollapsed: Boolean,
+            val groups: Flow<PagingData<GroupVo>>,
+            val dataPagingDataFlow: Flow<PagingData<Any>>,
+        ) : FeedList
+
+        data class Failed(val msg: String) : FeedList
+        data object Loading : FeedList
+    }
+
+    sealed interface MuteFeedsInGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data object Success : MuteFeedsInGroup
+        data class Failed(val msg: String) : MuteFeedsInGroup
+    }
+
+    sealed interface CollapseAllGroup : FeedPartialStateChange {
+        override fun reduce(oldState: FeedState): FeedState {
+            return when (this) {
+                is Success -> oldState.copy(
+                    loadingDialog = false,
+                )
+
+                is Failed -> oldState.copy(
+                    loadingDialog = false,
+                )
+            }
+        }
+
+        data object Success : CollapseAllGroup
+        data class Failed(val msg: String) : CollapseAllGroup
+    }
+}

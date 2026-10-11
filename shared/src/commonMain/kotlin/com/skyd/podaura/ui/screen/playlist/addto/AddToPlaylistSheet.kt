@@ -1,0 +1,141 @@
+package com.skyd.podaura.ui.screen.playlist.addto
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.ext.safeItemKey
+import com.skyd.podaura.model.bean.playlist.MediaUrlWithArticleIdBean
+import com.skyd.podaura.model.bean.playlist.PlaylistViewBean
+import com.skyd.podaura.ui.component.AnimatedDismissModalBottomSheet
+import com.skyd.podaura.ui.component.CircularProgressPlaceholder
+import com.skyd.podaura.ui.component.ErrorPlaceholder
+import com.skyd.podaura.ui.component.PagingRefreshStateIndicator
+import com.skyd.podaura.ui.screen.playlist.PlaylistItem
+import com.skyd.podaura.ui.screen.playlist.PlaylistItemPlaceholder
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.add_to_playlist
+import podaura.shared.generated.resources.playlist_media_added
+
+
+@Composable
+fun AddToPlaylistSheet(
+    onDismissRequest: () -> Unit,
+    currentPlaylistId: String?,
+    selectedMediaList: List<MediaUrlWithArticleIdBean>,
+    viewModel: AddToPlaylistViewModel = koinViewModel(),
+    addOnly: Boolean = false,
+    enabled: Boolean = true,
+    onAddTo: ((PlaylistViewBean) -> Unit)? = null,
+    snackbarHostState: SnackbarHostState? = null,
+) {
+    val dispatch = viewModel.getDispatcher(
+        currentPlaylistId,
+        selectedMediaList,
+        startWith = AddToPlaylistIntent.Init(currentPlaylistId, selectedMediaList)
+    )
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+
+    AnimatedDismissModalBottomSheet(
+        onDismissRequest = onDismissRequest
+    ) {
+        Text(
+            text = stringResource(Res.string.add_to_playlist),
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        if (!enabled) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Box(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+            when (val playlistState = uiState.playlistState) {
+                is PlaylistState.Failed -> ErrorPlaceholder(playlistState.msg)
+                PlaylistState.Init -> CircularProgressPlaceholder()
+                is PlaylistState.Success -> AddToPlaylistSheetContent(
+                    playlist = playlistState.playlistPagingDataFlow.collectAsLazyPagingItems(),
+                    selected = { it.playlist.playlistId in uiState.addedPlaylists },
+                    onSelect = {
+                        if (onAddTo != null) onAddTo(it)
+                        else dispatch(
+                            AddToPlaylistIntent.AddTo(
+                                medias = selectedMediaList,
+                                playlist = it
+                            )
+                        )
+                    },
+                    addOnly = addOnly,
+                    enabled = enabled,
+                    onRemove = {
+                        dispatch(
+                            AddToPlaylistIntent.RemoveFromPlaylist(
+                                medias = selectedMediaList,
+                                playlist = it,
+                            )
+                        )
+                    },
+                )
+            }
+            snackbarHostState?.let {
+                SnackbarHost(hostState = it, modifier = Modifier.align(Alignment.BottomCenter))
+            }
+        }
+    }
+}
+
+
+@Composable
+fun AddToPlaylistSheetContent(
+    playlist: LazyPagingItems<PlaylistViewBean>,
+    selected: (PlaylistViewBean) -> Boolean,
+    onSelect: (PlaylistViewBean) -> Unit,
+    onRemove: (PlaylistViewBean) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(),
+    addOnly: Boolean = false,
+    enabled: Boolean = true,
+) {
+    PagingRefreshStateIndicator(
+        lazyPagingItems = playlist,
+        placeholderPadding = contentPadding,
+    ) {
+        LazyColumn {
+            items(
+                count = playlist.itemCount,
+                key = playlist.safeItemKey { it.playlist.playlistId },
+            ) { index ->
+                when (val item = playlist[index]) {
+                    is PlaylistViewBean -> {
+                        val s = selected(item)
+                        PlaylistItem(
+                            playlistViewBean = item,
+                            selected = s,
+                            enabled = enabled && !(addOnly && s),
+                            selectedLabel = if (addOnly && s) stringResource(Res.string.playlist_media_added) else null,
+                            onClick = { if (s) onRemove(item) else onSelect(item) },
+                            onRename = {},
+                            onDelete = { },
+                        )
+                    }
+
+                    else -> PlaylistItemPlaceholder()
+                }
+            }
+        }
+    }
+}

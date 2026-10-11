@@ -1,0 +1,295 @@
+package com.skyd.podaura.ui.screen.settings.data
+
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoDelete
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PermMedia
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.Today
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import com.skyd.compone.component.BackIcon
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.ComponeScaffold
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.DefaultBackClick
+import com.skyd.compone.component.dialog.DeleteWarningDialog
+import com.skyd.compone.component.dialog.WaitingDialog
+import com.skyd.compone.component.navigation.LocalNavBackStack
+import com.skyd.compone.component.pointerOnBack
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.model.preference.data.medialib.MediaLibLocationPreference
+import com.skyd.podaura.model.preference.data.medialib.mediaLibraryLocationDisplayName
+import com.skyd.podaura.model.preference.data.medialib.persistMediaLibraryLocation
+import com.skyd.podaura.model.preference.data.medialib.resetMediaLibraryLocation
+import com.skyd.podaura.ui.screen.settings.data.autodelete.AutoDeleteRoute
+import com.skyd.podaura.ui.screen.settings.data.deleteconstraint.DeleteConstraintRoute
+import com.skyd.podaura.ui.screen.settings.data.importexport.ImportExportRoute
+import com.skyd.settings.BaseSettingsItem
+import com.skyd.settings.SettingsLazyColumn
+import io.github.vinceglb.filekit.dialogs.compose.rememberDirectoryPickerLauncher
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.auto_delete_article_screen_description
+import podaura.shared.generated.resources.auto_delete_screen_name
+import podaura.shared.generated.resources.cancel
+import podaura.shared.generated.resources.data_screen_change_lib_location
+import podaura.shared.generated.resources.data_screen_clear_cache
+import podaura.shared.generated.resources.data_screen_clear_cache_description
+import podaura.shared.generated.resources.data_screen_clear_cache_warning
+import podaura.shared.generated.resources.data_screen_clear_play_history
+import podaura.shared.generated.resources.data_screen_clear_play_history_description
+import podaura.shared.generated.resources.data_screen_clear_play_history_success
+import podaura.shared.generated.resources.data_screen_clear_play_history_warning
+import podaura.shared.generated.resources.data_screen_clear_up_category
+import podaura.shared.generated.resources.data_screen_delete_article_before
+import podaura.shared.generated.resources.data_screen_delete_article_before_description
+import podaura.shared.generated.resources.data_screen_media_lib_category
+import podaura.shared.generated.resources.data_screen_name
+import podaura.shared.generated.resources.data_screen_sync_category
+import podaura.shared.generated.resources.delete
+import podaura.shared.generated.resources.delete_constraint_screen_name
+import podaura.shared.generated.resources.delete_constraint_screen_name_description
+import podaura.shared.generated.resources.import_export_screen_description
+import podaura.shared.generated.resources.import_export_screen_name
+import podaura.shared.generated.resources.media_library_location_error
+
+
+@Serializable
+data object DataRoute : NavKey
+
+@Composable
+fun DataScreen(
+    onBack: (() -> Unit)? = DefaultBackClick,
+    viewModel: DataViewModel = koinViewModel(),
+    windowInsets: WindowInsets = WindowInsets.safeDrawing
+) {
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val navBackStack = LocalNavBackStack.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+    val dispatch = viewModel.getDispatcher(startWith = DataIntent.Init)
+    val locationError = stringResource(Res.string.media_library_location_error)
+
+    val directoryPicker = rememberDirectoryPickerLauncher(
+        onError = { scope.launch { snackbarHostState.showSnackbar(locationError) } },
+        onResult = { directory ->
+            directory ?: return@rememberDirectoryPickerLauncher
+            scope.launch {
+                runCatching { persistMediaLibraryLocation(directory) }
+                    .onFailure { snackbarHostState.showSnackbar(locationError) }
+            }
+        },
+    )
+
+    ComponeScaffold(
+        modifier = Modifier.pointerOnBack(onBack = onBack),
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.LargeFlexible,
+                scrollBehavior = scrollBehavior,
+                title = { Text(text = stringResource(Res.string.data_screen_name)) },
+                navigationIcon = { if (onBack != null) BackIcon(onClick = onBack) },
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+        },
+        contentWindowInsets = windowInsets
+    ) { innerPadding ->
+        var openDeleteWarningDialog by rememberSaveable { mutableStateOf(false) }
+        var openDeletePlayHistoryWarningDialog by rememberSaveable { mutableStateOf(false) }
+        var openDeleteBeforeDatePickerDialog by rememberSaveable { mutableStateOf(false) }
+
+        SettingsLazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = innerPadding,
+        ) {
+            group(text = { getString(Res.string.data_screen_media_lib_category) }) {
+                item {
+                    val localMediaLibLocation = MediaLibLocationPreference.current
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.PermMedia),
+                        text = stringResource(Res.string.data_screen_change_lib_location),
+                        descriptionText = mediaLibraryLocationDisplayName(localMediaLibLocation),
+                        enabled = MediaLibLocationPreference.key != null,
+                        onClick = directoryPicker::launch,
+                    ) {
+                        ComponeIconButton(
+                            onClick = {
+                                scope.launch {
+                                    runCatching { resetMediaLibraryLocation() }
+                                        .onFailure { snackbarHostState.showSnackbar(locationError) }
+                                }
+                            },
+                            imageVector = Icons.Outlined.Replay,
+                        )
+                    }
+                }
+            }
+            group(text = { getString(Res.string.data_screen_clear_up_category) }) {
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.Delete),
+                        text = stringResource(Res.string.data_screen_clear_cache),
+                        descriptionText = stringResource(Res.string.data_screen_clear_cache_description),
+                        onClick = { openDeleteWarningDialog = true }
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = null,
+                        text = stringResource(Res.string.delete_constraint_screen_name),
+                        descriptionText = stringResource(Res.string.delete_constraint_screen_name_description),
+                        onClick = { navBackStack.add(DeleteConstraintRoute) },
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.Today),
+                        text = stringResource(Res.string.data_screen_delete_article_before),
+                        descriptionText = stringResource(Res.string.data_screen_delete_article_before_description),
+                        onClick = { openDeleteBeforeDatePickerDialog = true },
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.AutoDelete),
+                        text = stringResource(Res.string.auto_delete_screen_name),
+                        descriptionText = stringResource(Res.string.auto_delete_article_screen_description),
+                        onClick = { navBackStack.add(AutoDeleteRoute) }
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.History),
+                        text = stringResource(Res.string.data_screen_clear_play_history),
+                        descriptionText = stringResource(Res.string.data_screen_clear_play_history_description),
+                        onClick = { openDeletePlayHistoryWarningDialog = true }
+                    )
+                }
+            }
+            group(text = { getString(Res.string.data_screen_sync_category) }) {
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.SwapVert),
+                        text = stringResource(Res.string.import_export_screen_name),
+                        descriptionText = stringResource(Res.string.import_export_screen_description),
+                        onClick = { navBackStack.add(ImportExportRoute) }
+                    )
+                }
+            }
+        }
+
+        if (openDeleteBeforeDatePickerDialog) {
+            DeleteArticleBeforeDatePickerDialog(
+                onDismissRequest = { openDeleteBeforeDatePickerDialog = false },
+                onConfirm = { dispatch(DataIntent.DeleteArticleBefore(it)) }
+            )
+        }
+
+        DeleteWarningDialog(
+            visible = openDeleteWarningDialog,
+            text = stringResource(Res.string.data_screen_clear_cache_warning),
+            onDismissRequest = { openDeleteWarningDialog = false },
+            onDismiss = { openDeleteWarningDialog = false },
+            onConfirm = { dispatch(DataIntent.ClearCache) },
+        )
+
+        DeleteWarningDialog(
+            visible = openDeletePlayHistoryWarningDialog,
+            text = stringResource(Res.string.data_screen_clear_play_history_warning),
+            onDismissRequest = { openDeletePlayHistoryWarningDialog = false },
+            onDismiss = { openDeletePlayHistoryWarningDialog = false },
+            onConfirm = { dispatch(DataIntent.DeletePlayHistory) },
+        )
+
+        WaitingDialog(visible = uiState.loadingDialog)
+
+        MviEventListener(viewModel.singleEvent) { event ->
+            when (event) {
+                is DataEvent.ClearCacheResultEvent.Success ->
+                    snackbarHostState.showSnackbar(event.msg)
+
+                is DataEvent.ClearCacheResultEvent.Failed ->
+                    snackbarHostState.showSnackbar(event.msg)
+
+                is DataEvent.DeleteArticleBeforeResultEvent.Failed ->
+                    snackbarHostState.showSnackbar(event.msg)
+
+                is DataEvent.DeleteArticleBeforeResultEvent.Success ->
+                    snackbarHostState.showSnackbar(event.msg)
+
+                is DataEvent.DeletePlayHistoryResultEvent.Failed ->
+                    snackbarHostState.showSnackbar(event.msg)
+
+                is DataEvent.DeletePlayHistoryResultEvent.Success ->
+                    snackbarHostState.showSnackbar(
+                        getString(Res.string.data_screen_clear_play_history_success, event.count)
+                    )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeleteArticleBeforeDatePickerDialog(
+    onDismissRequest: () -> Unit,
+    onConfirm: (Long) -> Unit
+) {
+    val datePickerState = rememberDatePickerState()
+    val confirmEnabled = remember { derivedStateOf { datePickerState.selectedDateMillis != null } }
+    DatePickerDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(datePickerState.selectedDateMillis!!) },
+                enabled = confirmEnabled.value,
+            ) {
+                Text(stringResource(Res.string.delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(Res.string.cancel))
+            }
+        }
+    ) {
+        DatePicker(state = datePickerState)
+    }
+}

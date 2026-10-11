@@ -1,0 +1,82 @@
+package com.skyd.podaura.model.worker.download
+
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import com.skyd.downloader.download.DownloadConstraints
+import com.skyd.fundation.di.get
+import com.skyd.podaura.model.bean.article.ArticleBean
+import com.skyd.podaura.model.db.dao.ArticleDao
+import com.skyd.podaura.model.db.dao.EnclosureDao
+import com.skyd.podaura.model.db.dao.download.AutoDownloadRuleDao
+import com.skyd.podaura.model.download.ArticleDownloadSource
+import com.skyd.podaura.model.repository.download.AndroidDownloadStarter
+import com.skyd.podaura.model.repository.download.AutoDownloadStarter
+import kotlinx.coroutines.flow.first
+
+class AutoDownloadWorker(context: Context, parameters: WorkerParameters) :
+    CoroutineWorker(context, parameters) {
+
+    override suspend fun doWork(): Result {
+        val articleId = inputData.getString("articleId") ?: return Result.failure()
+        val enclosureDao = get<EnclosureDao>()
+        val enclosure = enclosureDao.getEnclosureList(articleId).first().firstOrNull()
+            ?: return Result.success()
+        val article = get<ArticleDao>().getArticleWithFeed(articleId).first()
+            ?: return Result.success()
+        AndroidDownloadStarter(applicationContext).download(
+            url = enclosure.url,
+            type = enclosure.type,
+            articleDownloadSource = ArticleDownloadSource(
+                articleId = articleId,
+                feedUrl = article.feed.url,
+            ),
+            automatic = true,
+            constraints = DownloadConstraints(
+                requireUnmetered = inputData.getBoolean(KEY_REQUIRE_UNMETERED, false),
+                requiresCharging = inputData.getBoolean(KEY_REQUIRES_CHARGING, false),
+                requiresBatteryNotLow = inputData.getBoolean(KEY_REQUIRES_BATTERY_NOT_LOW, false),
+            ),
+        )
+        return Result.success()
+    }
+}
+
+class AutoDownloadStarterImpl : AutoDownloadStarter {
+    override suspend fun start(data: Map<String, List<ArticleBean>>) {
+        val autoDownloadRuleDao = get<AutoDownloadRuleDao>()
+        val works = data.mapNotNull { (k, v) ->
+            val rule = autoDownloadRuleDao.getRuleByFeedUrl(k).first() ?: return@mapNotNull null
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(if (rule.requireWifi) NetworkType.UNMETERED else NetworkType.CONNECTED)
+                .setRequiresCharging(rule.requireCharging)
+                .setRequiresBatteryNotLow(rule.requireBatteryNotLow)
+                .build()
+            v.map { article ->
+                OneTimeWorkRequestBuilder<AutoDownloadWorker>()
+                    .setConstraints(constraints)
+                    .setInputData(
+                        workDataOf(
+                            "articleId" to article.articleId,
+                            KEY_REQUIRE_UNMETERED to rule.requireWifi,
+                            KEY_REQUIRES_CHARGING to rule.requireCharging,
+                            KEY_REQUIRES_BATTERY_NOT_LOW to rule.requireBatteryNotLow,
+                        )
+                    )
+                    .build()
+            }
+        }.flatten()
+        if (works.isNotEmpty()) {
+            WorkManager.getInstance(get()).enqueue(works)
+        }
+    }
+}
+
+private const val KEY_REQUIRE_UNMETERED = "requireUnmetered"
+private const val KEY_REQUIRES_CHARGING = "requiresCharging"
+private const val KEY_REQUIRES_BATTERY_NOT_LOW = "requiresBatteryNotLow"

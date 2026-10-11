@@ -1,22 +1,52 @@
+@file:Suppress("UnstableApiUsage")
+
+rootProject.name = "PodAura"
+
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+enableFeaturePreview("STABLE_CONFIGURATION_CACHE")
+
 pluginManagement {
+    includeBuild("platform/apple/build-logic")
     repositories {
         google()
-//        maven(url = "https://maven.aliyun.com/repository/public")
+        // maven(url = "https://maven.aliyun.com/repository/public")
         mavenCentral()
-        maven(url = "https://jitpack.io")
         gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-//        maven(url = "https://maven.aliyun.com/repository/public")
-        mavenCentral()
         maven(url = "https://jitpack.io")
     }
 }
 
-rootProject.name = "AniVu"
-include(":app")
- 
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
+dependencyResolutionManagement {
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    repositories {
+        google()
+        // maven(url = "https://maven.aliyun.com/repository/public")
+        mavenCentral()
+        maven(url = "https://central.sonatype.com/repository/maven-snapshots")
+        maven(url = "https://jitpack.io")
+    }
+}
+
+include(
+    ":shared",
+    ":fundation",
+    ":htmlrender",
+    ":downloader",
+    ":ksp:processor",
+    ":ksp:annotation",
+    ":platform:android:app",
+    ":platform:android:benchmark",
+)
+
+// Use -PcomponePath=../Compone to develop against the local UI library.
+providers.gradleProperty("componePath").orNull?.let { componePath ->
+    includeBuild(componePath) {
+        dependencySubstitution {
+            substitute(module("io.github.skyd666:compone")).using(project(":shared"))
+        }
+    }
+}

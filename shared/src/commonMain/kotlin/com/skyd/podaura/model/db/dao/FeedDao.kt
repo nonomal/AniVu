@@ -1,0 +1,400 @@
+package com.skyd.podaura.model.db.dao
+
+import androidx.paging.PagingSource
+import androidx.room3.Dao
+import androidx.room3.DaoReturnTypeConverters
+import androidx.room3.Insert
+import androidx.room3.OnConflictStrategy
+import androidx.room3.Query
+import androidx.room3.RawQuery
+import androidx.room3.RoomRawQuery
+import androidx.room3.Transaction
+import androidx.room3.Update
+import androidx.room3.paging.PagingSourceDaoReturnTypeConverter
+import com.skyd.fundation.di.get
+import com.skyd.podaura.model.bean.ARTICLE_NOTIFICATION_RULE_TABLE_NAME
+import com.skyd.podaura.model.bean.ArticleNotificationRuleBean
+import com.skyd.podaura.model.bean.article.ArticleBean
+import com.skyd.podaura.model.bean.feed.FEED_TABLE_NAME
+import com.skyd.podaura.model.bean.feed.FEED_VIEW_NAME
+import com.skyd.podaura.model.bean.feed.FeedBean
+import com.skyd.podaura.model.bean.feed.FeedViewBean
+import com.skyd.podaura.model.bean.feed.FeedWithArticleBean
+import com.skyd.podaura.model.bean.group.GROUP_TABLE_NAME
+import com.skyd.podaura.model.bean.group.GroupBean
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
+
+@Dao
+@DaoReturnTypeConverters(PagingSourceDaoReturnTypeConverter::class)
+interface FeedDao {
+    @Transaction
+    suspend fun setFeed(feedBean: FeedBean) {
+        val isNew = getFeed(feedBean.url) == null
+        innerSetFeed(feedBean)
+        if (isNew) insertDefaultNotificationRule(
+            feedBean.nickname ?: feedBean.title ?: feedBean.url,
+            Json.encodeToString(listOf(feedBean.url)),
+        )
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun innerSetFeed(feedBean: FeedBean)
+
+    @Query(
+        "INSERT INTO $ARTICLE_NOTIFICATION_RULE_TABLE_NAME " +
+                "(${ArticleNotificationRuleBean.NAME_COLUMN}, ${ArticleNotificationRuleBean.REGEX_COLUMN}, " +
+                "${ArticleNotificationRuleBean.FEED_URLS_COLUMN}, ${ArticleNotificationRuleBean.IS_MANAGED_COLUMN}) " +
+                "SELECT :name, '', :feedUrlsJson, 1 WHERE NOT EXISTS (" +
+                "SELECT 1 FROM $ARTICLE_NOTIFICATION_RULE_TABLE_NAME " +
+                "WHERE ${ArticleNotificationRuleBean.IS_MANAGED_COLUMN} = 1 " +
+                "AND ${ArticleNotificationRuleBean.FEED_URLS_COLUMN} = :feedUrlsJson)"
+    )
+    suspend fun insertDefaultNotificationRule(name: String, feedUrlsJson: String)
+
+    fun observeNotificationsEnabled(feedUrl: String): Flow<Boolean> =
+        observeDefaultNotificationRule(Json.encodeToString(listOf(feedUrl)))
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM $ARTICLE_NOTIFICATION_RULE_TABLE_NAME " +
+                "WHERE ${ArticleNotificationRuleBean.IS_MANAGED_COLUMN} = 1 " +
+                "AND ${ArticleNotificationRuleBean.FEED_URLS_COLUMN} = :feedUrlsJson)"
+    )
+    fun observeDefaultNotificationRule(feedUrlsJson: String): Flow<Boolean>
+
+    suspend fun removeDefaultNotificationRule(feedUrl: String): Int =
+        deleteDefaultNotificationRule(Json.encodeToString(listOf(feedUrl)))
+
+    @Query(
+        "DELETE FROM $ARTICLE_NOTIFICATION_RULE_TABLE_NAME " +
+                "WHERE ${ArticleNotificationRuleBean.IS_MANAGED_COLUMN} = 1 " +
+                "AND ${ArticleNotificationRuleBean.FEED_URLS_COLUMN} = :feedUrlsJson"
+    )
+    suspend fun deleteDefaultNotificationRule(feedUrlsJson: String): Int
+
+    @Transaction
+    @Update
+    suspend fun updateFeed(feedBean: FeedBean)
+
+    @Transaction
+    suspend fun setFeedWithArticle(feedWithArticleBean: FeedWithArticleBean) {
+        if (containsByUrl(feedWithArticleBean.feed.url) == 0) {
+            setFeed(feedWithArticleBean.feed)
+        } else {
+            updateFeed(feedWithArticleBean.feed)
+        }
+        get<ArticleDao>().insertListIfNotExist(feedWithArticleBean.normalizedArticles())
+    }
+
+    @Transaction
+    suspend fun updateFeedWithArticleIfExists(feedWithArticleBean: FeedWithArticleBean): Boolean {
+        if (getFeed(feedWithArticleBean.feed.url) == null) return false
+
+        updateFeed(feedWithArticleBean.feed)
+        get<ArticleDao>().insertListIfNotExist(feedWithArticleBean.normalizedArticles())
+        return true
+    }
+
+    @Transaction
+    suspend fun replaceFeedUrl(oldUrl: String, feedWithArticleBean: FeedWithArticleBean) {
+        val newUrl = feedWithArticleBean.feed.url
+        val notificationsEnabled = observeNotificationsEnabled(oldUrl).first()
+        get<ArticleNotificationRuleDao>().moveUserFeedTargets(oldUrl, newUrl)
+        removeFeed(oldUrl)
+        setFeedWithArticle(feedWithArticleBean)
+        updateFeedNotificationsEnabled(newUrl, notificationsEnabled)
+    }
+
+    @Transaction
+    suspend fun removeFeed(feedBean: FeedBean): Int = removeFeed(feedBean.url)
+
+    @Transaction
+    suspend fun removeFeed(url: String): Int {
+        get<ArticleNotificationRuleDao>().removeFeedTargets(listOf(url))
+        return innerRemoveFeed(url)
+    }
+
+    @Query("DELETE FROM $FEED_TABLE_NAME WHERE ${FeedBean.URL_COLUMN} = :url")
+    suspend fun innerRemoveFeed(url: String): Int
+
+    @Transaction
+    suspend fun removeFeedByGroupId(groupId: String): Int {
+        get<ArticleNotificationRuleDao>().removeFeedTargets(getFeedUrlsByGroupId(groupId))
+        return innerRemoveFeedByGroupId(groupId)
+    }
+
+    @Query("DELETE FROM $FEED_TABLE_NAME WHERE ${FeedBean.GROUP_ID_COLUMN} = :groupId")
+    suspend fun innerRemoveFeedByGroupId(groupId: String): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $FEED_TABLE_NAME
+        SET ${FeedBean.GROUP_ID_COLUMN} = :toGroupId, 
+            ${FeedBean.ORDER_POSITION_COLUMN} = ${FeedBean.ORDER_POSITION_COLUMN} - :fromGroupFeedMinOrder + :toGroupFeedMaxOrder + :orderDelta 
+        WHERE :fromGroupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} IS NULL OR
+        ${FeedBean.GROUP_ID_COLUMN} = :fromGroupId OR
+        :fromGroupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} NOT IN (
+            SELECT DISTINCT ${GroupBean.GROUP_ID_COLUMN} FROM `$GROUP_TABLE_NAME`
+        )
+        """
+    )
+    suspend fun moveFeedToGroup(
+        fromGroupId: String?,
+        toGroupId: String?,
+        fromGroupFeedMinOrder: Double,
+        toGroupFeedMaxOrder: Double,
+        orderDelta: Double,
+    ): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $FEED_TABLE_NAME
+        SET ${FeedBean.ICON_COLUMN} = :icon
+        WHERE ${FeedBean.URL_COLUMN} = :feedUrl
+        """
+    )
+    suspend fun updateFeedIcon(feedUrl: String, icon: String?): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $FEED_TABLE_NAME
+        SET ${FeedBean.REQUEST_HEADERS_COLUMN} = :headers
+        WHERE ${FeedBean.URL_COLUMN} = :feedUrl
+        """
+    )
+    suspend fun updateFeedHeaders(feedUrl: String, headers: FeedBean.RequestHeaders?)
+
+    @Transaction
+    @Query(
+        """
+        SELECT ${FeedBean.REQUEST_HEADERS_COLUMN} FROM $FEED_TABLE_NAME
+        WHERE ${FeedBean.URL_COLUMN} = :feedUrl
+        """
+    )
+    fun getFeedHeaders(feedUrl: String): Flow<FeedBean.RequestHeaders?>
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $FEED_TABLE_NAME
+        SET ${FeedBean.SORT_XML_ARTICLES_ON_UPDATE_COLUMN} = :sort
+        WHERE ${FeedBean.URL_COLUMN} = :feedUrl
+        """
+    )
+    suspend fun updateFeedSortXmlArticlesOnUpdate(feedUrl: String, sort: Boolean): Int
+
+    @Transaction
+    suspend fun updateFeedNotificationsEnabled(feedUrl: String, enabled: Boolean) {
+        if (enabled) {
+            val feed = getFeed(feedUrl) ?: return
+            insertDefaultNotificationRule(
+                feed.nickname ?: feed.title ?: feedUrl,
+                Json.encodeToString(listOf(feedUrl))
+            )
+        } else {
+            removeDefaultNotificationRule(feedUrl)
+        }
+    }
+
+    @Query(
+        "SELECT * FROM $FEED_TABLE_NAME " +
+                "ORDER BY COALESCE(${FeedBean.NICKNAME_COLUMN}, ${FeedBean.TITLE_COLUMN}, ${FeedBean.URL_COLUMN}), " +
+                FeedBean.URL_COLUMN
+    )
+    fun observeAllFeeds(): Flow<List<FeedBean>>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $FEED_VIEW_NAME " +
+                "WHERE :groupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId " +
+                "ORDER BY ${FeedBean.ORDER_POSITION_COLUMN}"
+    )
+    fun getFeedViewPagingSourceInGroup(groupId: String?): PagingSource<Int, FeedViewBean>
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_VIEW_NAME WHERE ${FeedBean.URL_COLUMN} = :feedUrl")
+    suspend fun getFeedView(feedUrl: String): FeedViewBean
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_TABLE_NAME WHERE ${FeedBean.URL_COLUMN} = :feedUrl")
+    suspend fun getFeed(feedUrl: String): FeedBean?
+
+    @Query("SELECT * FROM $FEED_TABLE_NAME WHERE ${FeedBean.URL_COLUMN} IN (:feedUrls)")
+    fun observeFeeds(feedUrls: List<String>): Flow<List<FeedBean>>
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_VIEW_NAME WHERE ${FeedBean.URL_COLUMN} IN (:feedUrls)")
+    suspend fun getFeedsIn(feedUrls: List<String>): List<FeedViewBean>
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_VIEW_NAME WHERE ${FeedBean.GROUP_ID_COLUMN} IN (:groupIds)")
+    suspend fun getFeedsInGroup(groupIds: List<String>): List<FeedViewBean>
+
+    @Transaction
+    @Query("SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME WHERE ${FeedBean.GROUP_ID_COLUMN} IN (:groupIds)")
+    suspend fun getFeedUrlsInGroup(groupIds: List<String>): List<String>
+
+    @Transaction
+    @Query("SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL")
+    suspend fun getFeedUrlsInDefaultGroup(): List<String>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $FEED_VIEW_NAME " +
+                "WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL OR " +
+                "${FeedBean.GROUP_ID_COLUMN} NOT IN (:groupIds) " +
+                "ORDER BY ${FeedBean.ORDER_POSITION_COLUMN}"
+    )
+    suspend fun getFeedsNotInGroup(groupIds: List<String>): List<FeedViewBean>
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_VIEW_NAME WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL")
+    fun getFeedsInDefaultGroup(): Flow<List<FeedViewBean>>
+
+    @Transaction
+    @Query(
+        """
+            SELECT * FROM $FEED_VIEW_NAME
+            WHERE :groupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} IS NULL OR
+            ${FeedBean.GROUP_ID_COLUMN} = :groupId
+        """
+    )
+    suspend fun getFeedsByGroupId(groupId: String?): List<FeedViewBean>
+
+    @Transaction
+    @Query(
+        "SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME " +
+                "WHERE :groupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId"
+    )
+    suspend fun getFeedUrlsByGroupId(groupId: String?): List<String>
+
+    @Transaction
+    @RawQuery(observedEntities = [FeedBean::class, ArticleBean::class])
+    fun getFeedPagingSource(sql: RoomRawQuery): PagingSource<Int, FeedViewBean>
+
+    @Transaction
+    @RawQuery(observedEntities = [FeedBean::class, ArticleBean::class])
+    suspend fun getFeedList(sql: RoomRawQuery): List<FeedViewBean>
+
+    @Transaction
+    @Query("SELECT * FROM $FEED_TABLE_NAME")
+    fun getAllFeedList(): Flow<List<FeedBean>>
+
+    @Transaction
+    @Query("SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME")
+    suspend fun getAllFeedUrl(): List<String>
+
+    @Transaction
+    @Query("SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME WHERE ${FeedBean.MUTE_COLUMN} = 0")
+    suspend fun getAllUnmutedFeedUrl(): List<String>
+
+    @Transaction
+    @Query("SELECT COUNT(*) FROM $FEED_TABLE_NAME WHERE ${FeedBean.URL_COLUMN} LIKE :url")
+    suspend fun containsByUrl(url: String): Int
+
+    @Transaction
+    @Query("SELECT COUNT(*) FROM $FEED_TABLE_NAME WHERE ${FeedBean.CUSTOM_ICON_COLUMN} LIKE :customIcon")
+    suspend fun containsByCustomIcon(customIcon: String): Int
+
+    @Transaction
+    @Query(
+        "UPDATE $FEED_TABLE_NAME SET ${FeedBean.MUTE_COLUMN} = :mute " +
+                "WHERE ${FeedBean.URL_COLUMN} = :feedUrl"
+    )
+    suspend fun muteFeed(feedUrl: String, mute: Boolean): Int
+
+    @Transaction
+    @Query(
+        "UPDATE $FEED_TABLE_NAME SET ${FeedBean.MUTE_COLUMN} = :mute " +
+                "WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL AND :groupId IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId"
+    )
+    suspend fun muteFeedsInGroup(groupId: String?, mute: Boolean): Int
+
+    @Transaction
+    @Query(
+        "UPDATE `$FEED_TABLE_NAME` " +
+                "SET ${FeedBean.FILTER_MASK_COLUMN} = :filterMask " +
+                "WHERE ${FeedBean.URL_COLUMN} = :url"
+    )
+    suspend fun updateFilterMask(url: String, filterMask: Int): Int
+
+    @Transaction
+    @Query(
+        "SELECT ${FeedBean.FILTER_MASK_COLUMN} FROM `$FEED_TABLE_NAME` " +
+                "WHERE ${FeedBean.URL_COLUMN} = :url"
+    )
+    suspend fun getFilterMask(url: String): Int
+
+    @Transaction
+    @Query(
+        "UPDATE `$FEED_TABLE_NAME` " +
+                "SET ${FeedBean.ORDER_POSITION_COLUMN} = :orderPosition " +
+                "WHERE ${FeedBean.URL_COLUMN} = :url"
+    )
+    suspend fun reorderFeed(url: String, orderPosition: Double): Int
+
+    @Transaction
+    suspend fun reindexOrders(groupId: String?) {
+        getFeedUrlsByGroupId(groupId).forEachIndexed { index, url ->
+            reorderFeed(
+                url = url,
+                orderPosition = (index * ORDER_DELTA) + ORDER_DELTA,
+            )
+        }
+    }
+
+    @Transaction
+    @Query(
+        "SELECT * FROM `$FEED_TABLE_NAME` " +
+                "WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL AND :groupId IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId " +
+                "ORDER BY ${FeedBean.ORDER_POSITION_COLUMN} " +
+                "LIMIT 1 OFFSET :index"
+    )
+    suspend fun getNth(groupId: String?, index: Int): FeedBean?
+
+    @Transaction
+    @Query(
+        "SELECT COALESCE(MAX(`${FeedBean.ORDER_POSITION_COLUMN}`), 0) " +
+                "FROM `$FEED_TABLE_NAME` " +
+                "WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL AND :groupId IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId"
+    )
+    suspend fun getMaxOrder(groupId: String?): Double
+
+    @Transaction
+    @Query(
+        "SELECT COALESCE(MIN(`${FeedBean.ORDER_POSITION_COLUMN}`), 0) " +
+                "FROM `$FEED_TABLE_NAME` " +
+                "WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL AND :groupId IS NULL " +
+                "OR ${FeedBean.GROUP_ID_COLUMN} = :groupId"
+    )
+    suspend fun getMinOrder(groupId: String?): Double
+
+    companion object {
+        const val ORDER_DELTA = 10.0
+        const val ORDER_MIN_DELTA = 1E-5
+    }
+}
+
+private fun FeedWithArticleBean.normalizedArticles() = articles.map { articleWithEnclosure ->
+    val feedUrl = feed.url
+    val articleId = articleWithEnclosure.article.articleId
+    if (articleWithEnclosure.article.feedUrl != feedUrl) {
+        articleWithEnclosure.copy(
+            article = articleWithEnclosure.article.copy(feedUrl = feedUrl),
+            enclosures = articleWithEnclosure.enclosures.map {
+                if (it.articleId != articleId) it.copy(articleId = articleId) else it
+            }
+        )
+    } else {
+        articleWithEnclosure
+    }
+}

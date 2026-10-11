@@ -1,0 +1,656 @@
+package com.skyd.podaura.ui.screen.feed
+
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RssFeed
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.UnfoldLess
+import androidx.compose.material.icons.outlined.UnfoldMore
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalAbsoluteTonalElevation
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.surfaceColorAtElevation
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import com.skyd.compone.component.ComponeFloatingActionButton
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.DefaultTrailingIcon
+import com.skyd.compone.component.dialog.WaitingDialog
+import com.skyd.compone.component.navigation.LocalGlobalNavBackStack
+import com.skyd.compone.component.navigation.LocalNavBackStack
+import com.skyd.compone.ext.plus
+import com.skyd.fundation.util.isJvm
+import com.skyd.fundation.util.platform
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.ext.lastIndex
+import com.skyd.podaura.ext.readText
+import com.skyd.podaura.ext.safeItemKey
+import com.skyd.podaura.model.bean.feed.FeedViewBean
+import com.skyd.podaura.model.bean.group.GroupVo
+import com.skyd.podaura.model.bean.group.GroupVo.Companion.DEFAULT_GROUP_ID
+import com.skyd.podaura.model.preference.appearance.feed.FeedListTonalElevationPreference
+import com.skyd.podaura.model.preference.appearance.feed.FeedTopBarTonalElevationPreference
+import com.skyd.podaura.ui.component.PagingRefreshStateIndicator
+import com.skyd.podaura.ui.component.dialog.TextFieldDialog
+import com.skyd.podaura.ui.notification.PlatformArticleNotification
+import com.skyd.podaura.ui.screen.calendar.CalendarRoute
+import com.skyd.podaura.ui.screen.feed.item.Feed1Item
+import com.skyd.podaura.ui.screen.feed.item.Feed1ItemPlaceholder
+import com.skyd.podaura.ui.screen.feed.item.Group1Item
+import com.skyd.podaura.ui.screen.feed.mute.MuteFeedRoute
+import com.skyd.podaura.ui.screen.feed.reorder.feed.ReorderFeedRoute
+import com.skyd.podaura.ui.screen.feed.reorder.group.ReorderGroupRoute
+import com.skyd.podaura.ui.screen.feed.sheet.EditFeedSheet
+import com.skyd.podaura.ui.screen.search.SearchRoute
+import com.skyd.podaura.ui.screen.settings.appearance.feed.FeedStyleRoute
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.add
+import podaura.shared.generated.resources.article_delete_batch_result
+import podaura.shared.generated.resources.calendar_screen_name
+import podaura.shared.generated.resources.collapse_all_groups
+import podaura.shared.generated.resources.expand_all_groups
+import podaura.shared.generated.resources.feed_screen_all_articles
+import podaura.shared.generated.resources.feed_screen_name
+import podaura.shared.generated.resources.feed_screen_refresh_all_subscriptions
+import podaura.shared.generated.resources.feed_screen_refreshing_subscriptions_in_background
+import podaura.shared.generated.resources.feed_screen_rss_url
+import podaura.shared.generated.resources.feed_screen_search_feed
+import podaura.shared.generated.resources.feed_style_screen_name
+import podaura.shared.generated.resources.more
+import podaura.shared.generated.resources.mute_feed_screen_name
+import podaura.shared.generated.resources.paste
+import podaura.shared.generated.resources.reorder_group_screen_name
+
+@Serializable
+data class FeedListRoute(
+    val listPaneSelectedFeedUrls: List<String>? = null,
+    val listPaneSelectedGroupIds: List<String>? = null,
+) : NavKey
+
+@Composable
+internal fun FeedList(
+    listPaneSelectedFeedUrls: List<String>? = null,
+    listPaneSelectedGroupIds: List<String>? = null,
+    onShowArticleListByFeedUrls: (List<String>) -> Unit,
+    onShowArticleListByGroupId: (String) -> Unit,
+    viewModel: FeedViewModel = koinViewModel(),
+    windowInsets: WindowInsets = WindowInsets.safeDrawing
+) {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val navBackStack = LocalNavBackStack.current
+    val globalNavBackStack = LocalGlobalNavBackStack.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val bottomSheetSnackbarHostState = remember { SnackbarHostState() }
+    var openMoreMenu by rememberSaveable { mutableStateOf(false) }
+    var openAddDialog by rememberSaveable { mutableStateOf(false) }
+    var addDialogUrl by rememberSaveable { mutableStateOf("") }
+
+    var openCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
+    var createGroupDialogGroup by rememberSaveable { mutableStateOf("") }
+
+    var fabHeight by remember { mutableStateOf(0.dp) }
+    val initialPaneFocusRequester = remember { FocusRequester() }
+    val initialItemFocusRequester = remember { FocusRequester() }
+    var initialPaneFocused by remember { mutableStateOf(false) }
+    var initialFocusHandled by rememberSaveable { mutableStateOf(false) }
+
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+    val dispatch = viewModel.getDispatcher(startWith = FeedIntent.Init)
+    val refreshingSubscriptionsMessage = stringResource(
+        Res.string.feed_screen_refreshing_subscriptions_in_background
+    )
+
+    if (platform.isJvm && !initialFocusHandled) {
+        LaunchedEffect(initialPaneFocusRequester) {
+            initialPaneFocusRequester.requestFocus()
+        }
+    }
+
+    Scaffold(
+        // Keep startup focus in the list pane while its Paging data is still loading. The
+        // temporary focus target is removed after focus has moved to the first real item.
+        modifier = if (platform.isJvm && !initialFocusHandled) {
+            Modifier
+                .onFocusChanged { focusState ->
+                    val wasFocused = initialPaneFocused
+                    initialPaneFocused = focusState.isFocused
+                    if (wasFocused && !focusState.isFocused) {
+                        initialFocusHandled = true
+                    }
+                }
+                .focusRequester(initialPaneFocusRequester)
+                .focusable()
+        } else {
+            Modifier
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.Small,
+                title = { Text(text = stringResource(Res.string.feed_screen_name)) },
+                actions = {
+                    ComponeIconButton(
+                        onClick = {
+                            if (navBackStack.lastOrNull() !is SearchRoute.Feed) {
+                                navBackStack.add(SearchRoute.Feed)
+                            }
+                        },
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = stringResource(Res.string.feed_screen_search_feed),
+                    )
+                    ComponeIconButton(
+                        onClick = { globalNavBackStack.add(CalendarRoute) },
+                        imageVector = Icons.Outlined.CalendarMonth,
+                        contentDescription = stringResource(Res.string.calendar_screen_name),
+                    )
+                    ComponeIconButton(
+                        onClick = { openMoreMenu = true },
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = stringResource(Res.string.more),
+                    )
+                    MoreMenu(
+                        expanded = openMoreMenu,
+                        allGroupCollapsed = uiState.allGroupCollapsed,
+                        refreshAllFeedsInProgress = uiState.refreshAllFeedsInProgress,
+                        onRefreshAllFeeds = { dispatch(FeedIntent.RefreshAllFeeds) },
+                        onShowAllArticles = { onShowArticleListByFeedUrls(emptyList()) },
+                        onCollapseAllGroup = { dispatch(FeedIntent.CollapseAllGroup(it)) },
+                        onDismissRequest = { openMoreMenu = false },
+                    )
+                },
+                navigationIcon = {},
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                colors = TopAppBarDefaults.topAppBarColors().copy(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(
+                        FeedTopBarTonalElevationPreference.current.dp
+                    ),
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(
+                        FeedTopBarTonalElevationPreference.current.dp + 4.dp
+                    ),
+                ),
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        floatingActionButton = {
+            ComponeFloatingActionButton(
+                onClick = { openAddDialog = true },
+                onSizeWithSinglePaddingChanged = { _, height -> fabHeight = height },
+                contentDescription = stringResource(Res.string.add),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = stringResource(Res.string.add),
+                )
+            }
+        },
+        contentWindowInsets = windowInsets,
+        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(
+            LocalAbsoluteTonalElevation.current +
+                    FeedListTonalElevationPreference.current.dp
+        ),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) { innerPadding ->
+        val bottomSheetShowing by remember {
+            derivedStateOf { uiState.editGroupDialogBean != null || uiState.editFeedUrl != null }
+        }
+        val currentSnackbarHostState by rememberUpdatedState(
+            if (bottomSheetShowing) bottomSheetSnackbarHostState else snackbarHostState
+        )
+        LaunchedEffect(bottomSheetShowing) {
+            if (!bottomSheetShowing) {
+                bottomSheetSnackbarHostState.currentSnackbarData?.dismiss()
+            }
+        }
+        when (val listState = uiState.listState) {
+            is ListState.Failed, ListState.Init, ListState.Loading -> {}
+            is ListState.Success -> {
+                val lazyPagingItems = listState.dataPagingDataFlow.collectAsLazyPagingItems()
+                val itemSnapshotList = lazyPagingItems.itemSnapshotList
+                if (platform.isJvm && initialPaneFocused && !initialFocusHandled &&
+                    itemSnapshotList.items.isNotEmpty()
+                ) {
+                    LaunchedEffect(itemSnapshotList) {
+                        if (initialPaneFocused && !initialFocusHandled &&
+                            initialItemFocusRequester.requestFocus()
+                        ) {
+                            initialFocusHandled = true
+                        }
+                    }
+                }
+
+                FeedList(
+                    modifier = Modifier
+                        .nestedScroll(scrollBehavior.nestedScrollConnection)
+                        .then(
+                            if (platform.isJvm && !initialFocusHandled) {
+                                Modifier.focusRequester(initialItemFocusRequester)
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    lazyPagingItems = lazyPagingItems,
+                    contentPadding = innerPadding,
+                    fabPadding = fabHeight + 16.dp,
+                    selectedFeedUrls = listPaneSelectedFeedUrls,
+                    selectedGroupIds = listPaneSelectedGroupIds,
+                    onShowArticleListByFeedUrls = onShowArticleListByFeedUrls,
+                    onShowArticleListByGroupId = onShowArticleListByGroupId,
+                    onExpandChanged = { group, expanded ->
+                        dispatch(FeedIntent.ChangeGroupExpanded(group, expanded))
+                    },
+                    onEditFeed = { feed -> dispatch(FeedIntent.OnEditFeedDialog(feed.feed.url)) },
+                    onEditGroup = { group -> dispatch(FeedIntent.OnEditGroupDialog(group)) },
+                )
+            }
+        }
+
+        MviEventListener(viewModel.singleEvent) { event ->
+            when (event) {
+                is FeedEvent.AddFeedResultEvent.Cancelled -> {
+                    addDialogUrl = event.url
+                    openAddDialog = true
+                }
+
+                is FeedEvent.AddFeedResultEvent.Success -> {
+                    addDialogUrl = ""
+                    scope.launch {
+                        PlatformArticleNotification.requestPermission(showSettingsIfDenied = false)
+                    }
+                }
+
+                is FeedEvent.AddFeedResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.InitFeetListResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.CollapseAllGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.RefreshFeedResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.RefreshAllFeedsResultEvent.Started ->
+                    currentSnackbarHostState.showSnackbar(refreshingSubscriptionsMessage)
+
+                is FeedEvent.RefreshAllFeedsResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.CreateGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.MoveFeedsToGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.DeleteGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.EditGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.ReadAllResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.ClearGroupArticlesResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                is FeedEvent.ClearGroupArticlesResultEvent.Success -> {
+                    if (event.result.downloadProtectedCount > 0) {
+                        currentSnackbarHostState.showSnackbar(
+                            getString(
+                                Res.string.article_delete_batch_result,
+                                event.result.deletedCount,
+                                event.result.downloadProtectedCount,
+                            )
+                        )
+                    }
+                }
+
+                is FeedEvent.MuteFeedsInGroupResultEvent.Failed ->
+                    currentSnackbarHostState.showSnackbar(event.msg)
+
+                else -> Unit
+            }
+        }
+
+        if (openAddDialog) {
+            AddFeedDialog(
+                url = addDialogUrl,
+                onUrlChange = { text -> addDialogUrl = text },
+                onConfirm = { newUrl ->
+                    if (newUrl.isNotBlank()) {
+                        dispatch(FeedIntent.AddFeed(url = newUrl))
+                    }
+                    openAddDialog = false
+                },
+                onDismissRequest = {
+                    addDialogUrl = ""
+                    openAddDialog = false
+                }
+            )
+        }
+
+        uiState.editFeedUrl?.let { editFeedUrl ->
+            EditFeedSheet(
+                feedUrl = editFeedUrl,
+                onDismissRequest = { dispatch(FeedIntent.OnEditFeedDialog(null)) },
+                snackbarHostState = snackbarHostState
+            )
+        }
+
+        uiState.editGroupDialogBean?.let { group ->
+            EditGroupSheet(
+                onDismissRequest = { dispatch(FeedIntent.OnEditGroupDialog(null)) },
+                snackbarHost = { SnackbarHost(hostState = bottomSheetSnackbarHostState) },
+                group = group,
+                groups = uiState.groups.collectAsLazyPagingItems(),
+                onReadAll = { dispatch(FeedIntent.ReadAllInGroup(it)) },
+                onRefresh = { groupId, full ->
+                    dispatch(FeedIntent.RefreshGroupFeed(groupId, full))
+                },
+                onMuteAll = { groupId, mute ->
+                    dispatch(FeedIntent.MuteFeedsInGroup(groupId, mute))
+                },
+                onClear = { dispatch(FeedIntent.ClearGroupArticles(it)) },
+                onDelete = { dispatch(FeedIntent.DeleteGroup(it)) },
+                onNameChange = {
+                    dispatch(
+                        FeedIntent.RenameGroup(groupId = group.groupId, name = it)
+                    )
+                },
+                onMoveTo = {
+                    dispatch(
+                        FeedIntent.MoveFeedsToGroup(
+                            fromGroupId = group.groupId,
+                            toGroupId = it.groupId,
+                        )
+                    )
+                },
+                onReorderFeedsInGroup = { globalNavBackStack.add(ReorderFeedRoute(groupId = it)) },
+                openCreateGroupDialog = {
+                    openCreateGroupDialog = true
+                    createGroupDialogGroup = ""
+                },
+                onMessage = { scope.launch { currentSnackbarHostState.showSnackbar(it) } }
+            )
+        }
+
+        WaitingDialog(
+            visible = uiState.loadingDialog || uiState.addFeedState != null ||
+                    uiState.refreshFeedState != null,
+            onCancel = when {
+                uiState.addFeedState != null -> {
+                    { dispatch(FeedIntent.CancelAddFeed) }
+                }
+
+                uiState.refreshFeedState != null -> {
+                    { dispatch(FeedIntent.CancelRefreshGroupFeed) }
+                }
+
+                else -> null
+            },
+            cancelEnabled = !uiState.loadingDialog && if (uiState.addFeedState != null) {
+                uiState.addFeedState == AddFeedState.Loading
+            } else {
+                uiState.refreshFeedState == RefreshFeedState.Loading
+            },
+        )
+    }
+}
+
+@Composable
+private fun AddFeedDialog(
+    url: String,
+    onUrlChange: (String) -> Unit,
+    onConfirm: (url: String) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    TextFieldDialog(
+        icon = { Icon(imageVector = Icons.Outlined.RssFeed, contentDescription = null) },
+        titleText = stringResource(Res.string.add),
+        placeholder = stringResource(Res.string.feed_screen_rss_url),
+        value = url,
+        onValueChange = onUrlChange,
+        trailingIcon = if (url.isEmpty()) {
+            {
+                ComponeIconButton(
+                    imageVector = Icons.Rounded.ContentPaste,
+                    contentDescription = stringResource(Res.string.paste),
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        scope.launch {
+                            clipboard.readText()?.let(onUrlChange)
+                        }
+                    },
+                )
+            }
+        } else {
+            DefaultTrailingIcon
+        },
+        onDismissRequest = onDismissRequest,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+private fun FeedList(
+    modifier: Modifier = Modifier,
+    lazyPagingItems: LazyPagingItems<Any>,
+    contentPadding: PaddingValues = PaddingValues(),
+    fabPadding: Dp = 0.dp,
+    selectedFeedUrls: List<String>? = null,
+    selectedGroupIds: List<String>? = null,
+    onShowArticleListByFeedUrls: (List<String>) -> Unit,
+    onShowArticleListByGroupId: (String) -> Unit,
+    onExpandChanged: (GroupVo, Boolean) -> Unit,
+    onEditFeed: (FeedViewBean) -> Unit,
+    onEditGroup: (GroupVo) -> Unit,
+) {
+    PagingRefreshStateIndicator(
+        lazyPagingItems = lazyPagingItems,
+        placeholderPadding = contentPadding,
+    ) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .testTag("FeedLazyColumn"),
+            contentPadding = contentPadding + PaddingValues(
+                bottom = fabPadding,
+                start = 16.dp,
+                end = 16.dp,
+            ),
+        ) {
+            items(
+                count = lazyPagingItems.itemCount,
+                key = lazyPagingItems.safeItemKey { item ->
+                    when (item) {
+                        is GroupVo.DefaultGroup -> item.groupId
+                        is GroupVo -> item.groupId
+                        is FeedViewBean -> item.feed.url
+                        else -> item
+                    }
+                },
+            ) { index ->
+                Box(modifier = Modifier.animateItem()) {
+                    when (val item = lazyPagingItems[index]) {
+                        is GroupVo -> Group1Item(
+                            index = index,
+                            data = item,
+                            onExpandChange = onExpandChanged,
+                            isEmpty = { it == lazyPagingItems.lastIndex || lazyPagingItems[it + 1] is GroupVo },
+                            onShowAllArticles = { group -> onShowArticleListByGroupId(group.groupId) },
+                            onEdit = onEditGroup,
+                        )
+
+                        is FeedViewBean -> Feed1Item(
+                            data = item,
+                            selected = selectedFeedUrls != null && item.feed.url in selectedFeedUrls ||
+                                    selectedGroupIds != null &&
+                                    (item.feed.groupId ?: DEFAULT_GROUP_ID) in selectedGroupIds,
+                            inGroup = true,
+                            isEnd = index == lazyPagingItems.lastIndex || lazyPagingItems[index + 1] is GroupVo,
+                            onClick = { onShowArticleListByFeedUrls(listOf(it.url)) },
+                            onEdit = onEditFeed,
+                        )
+
+                        else -> Feed1ItemPlaceholder()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreMenu(
+    expanded: Boolean,
+    allGroupCollapsed: Boolean,
+    refreshAllFeedsInProgress: Boolean,
+    onRefreshAllFeeds: () -> Unit,
+    onShowAllArticles: () -> Unit,
+    onCollapseAllGroup: (Boolean) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    val globalNavBackStack = LocalGlobalNavBackStack.current
+    DropdownMenuPopup(expanded = expanded, onDismissRequest = onDismissRequest) {
+        val texts = listOf(
+            listOf(
+                stringResource(Res.string.feed_screen_refresh_all_subscriptions),
+                stringResource(Res.string.feed_screen_all_articles),
+            ),
+            listOf(
+                stringResource(
+                    if (allGroupCollapsed) Res.string.expand_all_groups
+                    else Res.string.collapse_all_groups
+                ),
+                stringResource(Res.string.reorder_group_screen_name),
+                stringResource(Res.string.mute_feed_screen_name),
+                stringResource(Res.string.feed_style_screen_name),
+            )
+        )
+        val leadingIcons = listOf(
+            listOf(
+                Icons.Outlined.Refresh,
+                Icons.AutoMirrored.Outlined.Article,
+            ),
+            listOf(
+                if (allGroupCollapsed) Icons.Outlined.UnfoldMore else Icons.Outlined.UnfoldLess,
+                Icons.AutoMirrored.Outlined.Sort,
+                Icons.AutoMirrored.Outlined.VolumeOff,
+                null,
+            )
+        )
+        val onClicks = listOf<List<() -> Unit>>(
+            listOf(
+                {
+                    onDismissRequest()
+                    onRefreshAllFeeds()
+                },
+                {
+                    onDismissRequest()
+                    onShowAllArticles()
+                }
+            ),
+            listOf(
+                {
+                    onDismissRequest()
+                    onCollapseAllGroup(!allGroupCollapsed)
+                },
+                {
+                    onDismissRequest()
+                    globalNavBackStack.add(ReorderGroupRoute)
+                },
+                {
+                    onDismissRequest()
+                    globalNavBackStack.add(MuteFeedRoute)
+                },
+                {
+                    onDismissRequest()
+                    globalNavBackStack.add(FeedStyleRoute)
+                },
+            )
+        )
+        val enabledItems = listOf(
+            listOf(!refreshAllFeedsInProgress, true),
+            listOf(true, true, true, true),
+        )
+
+        texts.forEachIndexed { groupIndex, subTexts ->
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(groupIndex, texts.size)) {
+                subTexts.forEachIndexed { index, text ->
+                    DropdownMenuItem(
+                        text = { Text(text = text) },
+                        shape = MenuDefaults.itemShape(index, subTexts.size).shape,
+                        leadingIcon = leadingIcons[groupIndex][index]?.let { icon ->
+                            {
+                                Icon(imageVector = icon, contentDescription = null)
+                            }
+                        },
+                        enabled = enabledItems[groupIndex][index],
+                        onClick = onClicks[groupIndex][index],
+                    )
+                }
+            }
+            Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+        }
+    }
+}

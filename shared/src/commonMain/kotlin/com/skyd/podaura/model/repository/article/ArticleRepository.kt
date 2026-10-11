@@ -1,0 +1,377 @@
+package com.skyd.podaura.model.repository.article
+
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.room3.RoomRawQuery
+import com.skyd.podaura.ext.getOrDefault
+import com.skyd.podaura.model.bean.article.ARTICLE_TABLE_NAME
+import com.skyd.podaura.model.bean.article.ArticleBean
+import com.skyd.podaura.model.bean.article.ArticleDeleteResult
+import com.skyd.podaura.model.bean.article.ArticleWithFeed
+import com.skyd.podaura.model.bean.feed.FEED_TABLE_NAME
+import com.skyd.podaura.model.bean.feed.FeedBean
+import com.skyd.podaura.model.bean.group.GroupVo
+import com.skyd.podaura.model.bean.playlist.MediaUrlWithArticleIdBean
+import com.skyd.podaura.model.bean.playlist.PlaylistArticleBean
+import com.skyd.podaura.model.db.dao.ArticleDao
+import com.skyd.podaura.model.db.dao.FeedDao
+import com.skyd.podaura.model.preference.data.delete.KeepArticlesWithDownloadTasksPreference
+import com.skyd.podaura.model.preference.data.delete.KeepFavoriteArticlesPreference
+import com.skyd.podaura.model.preference.data.delete.KeepPlaylistArticlesPreference
+import com.skyd.podaura.model.preference.data.delete.KeepUnreadArticlesPreference
+import com.skyd.podaura.model.preference.dataStore
+import com.skyd.podaura.model.repository.BaseRepository
+import com.skyd.podaura.model.repository.BatchProgress
+import com.skyd.podaura.model.repository.download.SelectedArticleDownloader
+import com.skyd.podaura.model.repository.download.SelectedDownloadPlan
+import com.skyd.podaura.model.repository.download.SelectedDownloadResult
+import com.skyd.podaura.model.repository.feed.RssHelper
+import com.skyd.podaura.model.repository.processBatchUpdates
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.getString
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.rss_update_failed
+import kotlin.coroutines.cancellation.CancellationException
+
+
+class ArticleRepository(
+    private val feedDao: FeedDao,
+    private val articleDao: ArticleDao,
+    private val rssHelper: RssHelper,
+    private val pagingConfig: PagingConfig,
+    private val downloadArticleProtectionResolver: DownloadArticleProtectionResolver,
+) : BaseRepository(), IArticleRepository {
+    private val filterMask: MutableStateFlow<Int> = MutableStateFlow(0)
+
+    fun requestFilterMask(): Flow<Int> = filterMask.asStateFlow()
+
+    fun isOnlySingleFeed(
+        feedUrls: List<String>,
+        groupIds: List<String>,
+        articleIds: List<String>,
+    ) = feedUrls.size == 1 && groupIds.isEmpty() && articleIds.isEmpty()
+
+    fun updateFilterMask(
+        feedUrls: List<String>,
+        groupIds: List<String>,
+        articleIds: List<String>,
+        filterMask: Int,
+    ): Flow<Int> = flow {
+        this@ArticleRepository.filterMask.emit(filterMask)
+        if (isOnlySingleFeed(feedUrls, groupIds, articleIds)) {
+            emit(feedDao.updateFilterMask(url = feedUrls.first(), filterMask = filterMask))
+        } else {
+            emit(0)
+        }
+    }
+
+    override fun requestRealFeedUrls(
+        feedUrls: List<String>,
+        groupIds: List<String>,
+        articleIds: List<String>,
+    ): Flow<List<String>> = flow {
+        val realFeedUrls = if (feedUrls.isEmpty() && groupIds.isEmpty() && articleIds.isEmpty()) {
+            feedDao.getAllFeedUrl()
+        } else {
+            val realGroupIds =
+                groupIds.filter { it.isNotEmpty() && GroupVo.DefaultGroup.groupId != it }
+            val hasDefault = realGroupIds.size != groupIds.size
+            buildList {
+                addAll(feedUrls)
+                if (realGroupIds.isNotEmpty()) addAll(feedDao.getFeedUrlsInGroup(realGroupIds))
+                if (hasDefault) addAll(feedDao.getFeedUrlsInDefaultGroup())
+            }
+        }
+        emit(realFeedUrls)
+    }.flowOn(Dispatchers.IO)
+
+    fun requestArticleList(
+        feedUrls: List<String>,
+        groupIds: List<String>,
+        articleIds: List<String>,
+    ): Flow<PagingData<ArticleWithFeed>> = flow {
+        if (isOnlySingleFeed(feedUrls, groupIds, articleIds)) {
+            filterMask.emit(feedDao.getFilterMask(feedUrls.first()))
+        }
+        emit(Unit)
+    }.flatMapLatest { filterMask }.flatMapLatest { filterMask ->
+        val favorite = FeedBean.parseFilterMaskToFavorite(filterMask)
+        val read = FeedBean.parseFilterMaskToRead(filterMask)
+        val mute = FeedBean.parseFilterMaskToMute(filterMask)
+        val sortBy = FeedBean.parseFilterMaskToSort(filterMask)
+        val realFeedUrls = requestRealFeedUrls(
+            feedUrls = feedUrls,
+            groupIds = groupIds,
+            articleIds = articleIds,
+        ).first()
+        Pager(pagingConfig) {
+            articleDao.getArticlePagingSource(
+                genSql(
+                    feedUrls = realFeedUrls.distinct(),
+                    articleIds = articleIds,
+                    isFavorite = favorite,
+                    isRead = read,
+                    isMute = mute,
+                    orderBy = sortBy,
+                )
+            )
+        }.flow
+    }.flowOn(Dispatchers.IO)
+
+    override fun refreshGroupArticles(groupId: String?, full: Boolean): Flow<Unit> = flow {
+        val realGroupId = if (groupId == GroupVo.DEFAULT_GROUP_ID) null else groupId
+        emit(feedDao.getFeedsByGroupId(realGroupId).map { it.feed.url })
+    }.flatMapConcat {
+        refreshArticleList(feedUrls = it, full = full)
+    }.flowOn(Dispatchers.IO)
+
+    fun requestSelectionIds(
+        feedUrls: List<String>,
+        groupIds: List<String>,
+        articleIds: List<String>,
+        filterMask: Int,
+    ): Flow<Set<String>> = flow {
+        emit(
+            articleDao.getArticleIds(
+                genSql(
+                    feedUrls = requestRealFeedUrls(feedUrls, groupIds, articleIds).first()
+                        .distinct(),
+                    articleIds = articleIds,
+                    isFavorite = FeedBean.parseFilterMaskToFavorite(filterMask),
+                    isRead = FeedBean.parseFilterMaskToRead(filterMask),
+                    isMute = FeedBean.parseFilterMaskToMute(filterMask),
+                    orderBy = FeedBean.parseFilterMaskToSort(filterMask),
+                    idsOnly = true,
+                )
+            ).toSet()
+        )
+    }.flowOn(Dispatchers.IO)
+
+    fun prepareSelectedDownloads(
+        articleIds: Set<String>,
+        downloader: SelectedArticleDownloader,
+        onProgress: suspend (BatchProgress) -> Unit = {},
+    ): Flow<SelectedDownloadPlan> = flow {
+        val articles = articleIds.chunked(SQLITE_BIND_CHUNK_SIZE)
+            .flatMap { articleDao.getArticleWithFeedListByIds(it) }
+        emit(downloader.prepare(articleIds, articles, onProgress))
+    }.flowOn(Dispatchers.IO)
+
+    fun downloadSelectedArticles(
+        plan: SelectedDownloadPlan,
+        downloader: SelectedArticleDownloader,
+        onProgress: suspend (BatchProgress) -> Unit = {},
+    ): Flow<SelectedDownloadResult> = flow {
+        emit(downloader.execute(plan, onProgress))
+    }.flowOn(Dispatchers.IO)
+
+    fun readSelectedArticles(articleIds: Set<String>, read: Boolean): Flow<BatchProgress> =
+        processBatchUpdates(articleIds, SQLITE_BIND_CHUNK_SIZE) {
+            articleDao.readArticles(it, read)
+        }.flowOn(Dispatchers.IO)
+
+    fun favoriteSelectedArticles(articleIds: Set<String>, favorite: Boolean): Flow<BatchProgress> =
+        processBatchUpdates(articleIds, SQLITE_BIND_CHUNK_SIZE) {
+            articleDao.favoriteArticles(it, favorite)
+        }.flowOn(Dispatchers.IO)
+
+    data class SelectedPlaylistMedia(
+        val medias: List<MediaUrlWithArticleIdBean>,
+        val noMediaCount: Int,
+        val failedCount: Int,
+    )
+
+    fun prepareSelectedPlaylistMedia(
+        articleIds: Set<String>,
+        filterMask: Int,
+    ): Flow<SelectedPlaylistMedia> = flow {
+        val articles = mutableListOf<PlaylistArticleBean>()
+        // Usually query in chunks; isolate a failed query so other articles still get prepared.
+        for (chunk in articleIds.chunked(SQLITE_BIND_CHUNK_SIZE)) {
+            currentCoroutineContext().ensureActive()
+            try {
+                articles += articleDao.getPlaylistArticlesByIds(chunk)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                for (id in chunk) {
+                    currentCoroutineContext().ensureActive()
+                    try {
+                        articles += articleDao.getPlaylistArticlesByIds(listOf(id))
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        // Missing or unreadable articles are counted below.
+                    }
+                }
+            }
+        }
+        val sort = FeedBean.parseFilterMaskToSort(filterMask)
+        val comparator = when (sort) {
+            is FeedBean.SortBy.Date -> compareBy { it.date }
+            is FeedBean.SortBy.Title -> compareBy<PlaylistArticleBean> { it.title }
+        }.let { if (sort.asc) it else it.reversed() }
+        var noMediaCount = 0
+        val medias = articles.sortedWith(comparator).flatMap { article ->
+            val enclosures = article.enclosures.filter { it.isMedia }
+            if (enclosures.isEmpty()) noMediaCount++
+            enclosures.map {
+                MediaUrlWithArticleIdBean(it.url, article.articleId)
+            }
+        }.distinctBy { it.url }
+        emit(SelectedPlaylistMedia(medias, noMediaCount, articleIds.size - articles.size))
+    }.flowOn(Dispatchers.IO)
+
+    class RefreshFeedsException(msg: String) : RuntimeException(msg)
+
+    override fun refreshArticleList(feedUrls: List<String>, full: Boolean): Flow<Unit> = flow {
+        coroutineScope {
+            val semaphore = Semaphore(5)
+            val failedUrls = feedUrls.map { feedUrl ->
+                async {
+                    semaphore.withPermit {
+                        try {
+                            val feed = feedDao.getFeed(feedUrl) ?: return@async null
+                            val feedWithArticle = rssHelper.queryRssXml(
+                                feed = feed,
+                                full = full,
+                                latestLink = articleDao.queryLatestByFeedUrl(feedUrl)?.link,
+                            )
+                            val refreshContext = currentCoroutineContext()
+                            withContext(NonCancellable) {
+                                // Cancel pending work, but let a save that has begun finish.
+                                refreshContext.ensureActive()
+                                feedDao.updateFeedWithArticleIfExists(feedWithArticle)
+                            }
+                            null
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            currentCoroutineContext().ensureActive()
+                            e.printStackTrace()
+                            feedUrl
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+            if (failedUrls.isNotEmpty()) {
+                throw RefreshFeedsException(
+                    getString(
+                        Res.string.rss_update_failed, failedUrls.size,
+                        failedUrls.joinToString(
+                            separator = "\n",
+                            limit = 10,
+                            transform = { "-$it" }
+                        ),
+                    )
+                )
+            }
+            emit(Unit)
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun favoriteArticle(articleId: String, favorite: Boolean): Flow<Unit> = flow {
+        articleDao.favoriteArticle(articleId, favorite)
+        emit(Unit)
+    }.flowOn(Dispatchers.IO)
+
+    override fun observeArticleFavorite(articleId: String): Flow<Boolean?> =
+        articleDao.observeArticleFavorite(articleId).flowOn(Dispatchers.IO)
+
+    override fun readArticle(articleId: String, read: Boolean): Flow<Unit> = flow {
+        articleDao.readArticle(articleId, read)
+        emit(Unit)
+    }.flowOn(Dispatchers.IO)
+
+    override fun deleteArticle(articleId: String): Flow<ArticleDeleteResult> = flow {
+        with(dataStore) {
+            val downloadProtectedArticleIds =
+                downloadArticleProtectionResolver.getProtectedArticleIds(
+                    enabled = getOrDefault(KeepArticlesWithDownloadTasksPreference),
+                )
+            emit(
+                articleDao.deleteArticle(
+                    articleId,
+                    keepPlaylistArticles = getOrDefault(KeepPlaylistArticlesPreference),
+                    keepUnread = getOrDefault(KeepUnreadArticlesPreference),
+                    keepFavorite = getOrDefault(KeepFavoriteArticlesPreference),
+                    downloadProtectedArticleIds = downloadProtectedArticleIds,
+                )
+            )
+        }
+    }.flowOn(Dispatchers.IO)
+
+    companion object {
+        // Stay below the 999 bind-parameter limit of older SQLite versions.
+        private const val SQLITE_BIND_CHUNK_SIZE = 900
+
+        fun genSql(
+            feedUrls: List<String>,
+            articleIds: List<String>,
+            isFavorite: Boolean?,
+            isRead: Boolean?,
+            isMute: Boolean?,
+            orderBy: FeedBean.SortBy,
+            idsOnly: Boolean = false,
+        ): RoomRawQuery {
+            val args = mutableListOf<String>()
+            val sql = buildString {
+                val columns = if (idsOnly) "`${ArticleBean.ARTICLE_ID_COLUMN}`" else "*"
+                append("SELECT DISTINCT $columns FROM `$ARTICLE_TABLE_NAME` WHERE 1 ")
+                if (isFavorite != null) {
+                    append("AND `${ArticleBean.IS_FAVORITE_COLUMN}` = ${if (isFavorite) 1 else 0} ")
+                }
+                if (isRead != null) {
+                    append("AND `${ArticleBean.IS_READ_COLUMN}` = ${if (isRead) 1 else 0} ")
+                }
+                if (isMute != null) {
+                    append("AND `${ArticleBean.FEED_URL_COLUMN}` IN  ")
+                    append("(SELECT DISTINCT `${FeedBean.URL_COLUMN}` FROM `$FEED_TABLE_NAME` WHERE `${FeedBean.MUTE_COLUMN}` = ${if (isMute) 1 else 0}) ")
+                }
+                if (feedUrls.isEmpty()) {
+                    append("AND (0 ")
+                } else {
+                    val feedUrlsStr = feedUrls.joinToString(", ") { "?" }
+                    append("AND (`${ArticleBean.FEED_URL_COLUMN}` IN ($feedUrlsStr) ")
+                    args += feedUrls
+                }
+                if (articleIds.isNotEmpty()) {
+                    val articleIdsStr = articleIds.joinToString(", ") { "?" }
+                    append("OR `${ArticleBean.ARTICLE_ID_COLUMN}` IN ($articleIdsStr) ")
+                    args += articleIds
+                }
+                append(") ")
+                val ascOrDesc = if (orderBy.asc) "ASC" else "DESC"
+                val orderField = when (orderBy) {
+                    is FeedBean.SortBy.Date -> ArticleBean.DATE_COLUMN
+                    is FeedBean.SortBy.Title -> ArticleBean.TITLE_COLUMN
+                }
+                append("\nORDER BY `$orderField` $ascOrDesc")
+            }
+            return RoomRawQuery(sql) {
+                args.forEachIndexed { index, text ->
+                    it.bindText(index + 1, text)
+                }
+            }
+        }
+    }
+}

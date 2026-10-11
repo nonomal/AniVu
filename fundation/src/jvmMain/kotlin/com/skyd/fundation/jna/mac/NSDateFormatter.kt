@@ -1,0 +1,44 @@
+package com.skyd.fundation.jna.mac
+
+import com.skyd.fundation.jna.mac.ObjCRuntime.getUtf8String
+import com.skyd.fundation.jna.mac.ObjCRuntime.invoke
+import com.sun.jna.Pointer
+
+class NSDateFormatter {
+
+    object Style {
+        const val NO = 0L
+        const val SHORT = 1L
+        const val MEDIUM = 2L
+    }
+
+    private val formatter: Pointer = ObjCRuntime.new("NSDateFormatter")
+
+    fun setDateStyle(style: Long) {
+        formatter("setDateStyle:", style)
+    }
+
+    fun setDoesRelativeDateFormatting(relative: Boolean) {
+        formatter("setDoesRelativeDateFormatting:", relative)
+    }
+
+    fun setTimeStyle(style: Long) {
+        formatter("setTimeStyle:", style)
+    }
+
+    fun setLocale(localeIdentifier: String) {
+        val identifier = ObjCRuntime.objc_getClass("NSString")(
+            "stringWithUTF8String:",
+            localeIdentifier,
+        )
+        val locale = ObjCRuntime.objc_getClass("NSLocale")(
+            "localeWithLocaleIdentifier:",
+            identifier,
+        )
+        formatter("setLocale:", locale)
+    }
+
+    fun stringFromDate(nsDate: Pointer): String {
+        return formatter("stringFromDate:", nsDate).getUtf8String(0)
+    }
+}

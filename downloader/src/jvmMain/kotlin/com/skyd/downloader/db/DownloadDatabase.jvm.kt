@@ -1,0 +1,15 @@
+package com.skyd.downloader.db
+
+import androidx.room3.Room
+import androidx.room3.RoomDatabase
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import com.skyd.fundation.config.Const
+import com.skyd.fundation.config.DB_DIR
+import java.io.File
+
+actual fun DownloadDatabase.Companion.builder(): RoomDatabase.Builder<DownloadDatabase> {
+    val dbFile = File(Const.DB_DIR, DOWNLOAD_FILE_NAME)
+    return Room.databaseBuilder<DownloadDatabase>(
+        name = dbFile.absolutePath,
+    ).setDriver(BundledSQLiteDriver())
+}

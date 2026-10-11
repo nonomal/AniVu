@@ -1,0 +1,88 @@
+# SLF4J
+-keep class org.slf4j.** { *; }
+
+# OkHttp engine
+-dontwarn com.oracle.svm.core.annotate.**
+-dontwarn org.bouncycastle.jsse.**
+-dontwarn org.conscrypt.**
+-dontwarn org.graalvm.nativeimage.**
+-dontwarn org.openjsse.**
+-keep class io.ktor.client.engine.okhttp.OkHttpEngineContainer
+
+# ICU4J
+-keep enum com.ibm.icu.text.DateTimePatternGenerator$DTPGflags { *; } # ClassCastException
+-keep enum com.ibm.icu.text.DateFormat$BooleanAttribute { *; } # ClassCastException
+
+# PrettyTime loads locale bundles dynamically through ResourceBundle.
+-keep class org.ocpsoft.prettytime.i18n.** { *; }
+
+# Database
+-keep class com.skyd.podaura.model.db.AppDatabase_Impl # ClassNotFoundError
+-keep class com.skyd.downloader.db.DownloadDatabase_Impl # ClassNotFoundError
+-keep class androidx.sqlite.driver.bundled.** { *; } # Caused by: java.lang.NoSuchMethodError: Method androidx.sqlite.driver.bundled.BundledSQLiteDriverKt.nativeThreadSafeMode()I not found
+-keep class org.sqlite.** { *; }
+
+# Ktor
+-keep class io.ktor.serialization.kotlinx.json.KotlinxSerializationJsonExtensionProvider
+
+# Coil
+-keep class coil3.util.DecoderServiceLoaderTarget { *; }
+-keep class coil3.util.FetcherServiceLoaderTarget { *; }
+-keep class coil3.util.ServiceLoaderComponentRegistry { *; }
+-keep class * implements coil3.util.DecoderServiceLoaderTarget { *; }
+-keep class * implements coil3.util.FetcherServiceLoaderTarget { *; }
+
+# Okio
+-keep class okio.Okio__OkioKt { *; } # VerifyError
+
+# Jna
+-keep class com.sun.jna.** { *; }
+-keep class * implements com.sun.jna.** { *; }
+-keep class com.skyd.fundation.jna.** { *; }
+
+# Compose
+-keep, allowshrinking, allowobfuscation class androidx.compose.ui.text.ParagraphKt { <methods>; }
+
+# Mediamp
+# JNA resolves native symbols from interface method names and descriptors at runtime. ProGuard
+# must not rename or optimize this interface (for example SetDllDirectoryW -> SetDllDirectoryW$...).
+-keep interface org.openani.mediamp.nativeloader.WindowsDllKernel32 { *; }
+# Kotlin -> JNI: exported symbol names contain the facade and method names.
+-keepclasseswithmembernames,includedescriptorclasses class org.openani.mediamp.mpv.MPVHandleKt {
+    native <methods>;
+}
+-keepclasseswithmembernames,includedescriptorclasses class org.openani.mediamp.mpv.MPVHandleDesktop {
+    native <methods>;
+}
+# JNI -> Kotlin: native code resolves these classes, methods, and descriptors by name.
+-keep class org.openani.mediamp.mpv.EventListener { <methods>; }
+-keep class org.openani.mediamp.mpv.RenderUpdateListener {
+    void onRenderUpdate();
+}
+-keep class org.openani.mediamp.mpv.MPVLogKt {
+    static void onNativeLog(long, int, java.lang.String, java.lang.String);
+}
+-keep class org.openani.mediamp.io.SeekableInput {
+    int read(byte[], int, int);
+    void seekTo(long);
+    void close();
+}
+
+# Windows Window Frame
+-keepnames class androidx.compose.foundation.HoverableNode
+-keepnames class androidx.compose.foundation.gestures.ScrollableNode
+-keepnames class androidx.compose.ui.scene.PlatformLayersComposeSceneImpl
+-keepnames class androidx.compose.ui.scene.CanvasLayersComposeSceneImpl
+-keepnames class androidx.compose.ui.scene.CanvasLayersComposeSceneImpl$AttachedComposeSceneLayer
+-keepclassmembers class androidx.compose.ui.scene.PlatformLayersComposeSceneImpl {
+    private *** getMainOwner();
+}
+-keepclassmembers class androidx.compose.ui.scene.CanvasLayersComposeSceneImpl {
+    private *** mainOwner;
+    private *** _layersCopyCache;
+    private *** focusedLayer;
+}
+-keepclassmembers class androidx.compose.ui.scene.CanvasLayersComposeSceneImpl$AttachedComposeSceneLayer {
+    private *** owner;
+    private *** isInBounds(...);
+}

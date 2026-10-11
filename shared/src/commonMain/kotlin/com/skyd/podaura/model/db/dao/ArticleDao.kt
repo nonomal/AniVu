@@ -1,0 +1,526 @@
+package com.skyd.podaura.model.db.dao
+
+import androidx.paging.PagingSource
+import androidx.room3.Dao
+import androidx.room3.DaoReturnTypeConverters
+import androidx.room3.Query
+import androidx.room3.RawQuery
+import androidx.room3.RoomRawQuery
+import androidx.room3.Transaction
+import androidx.room3.Upsert
+import androidx.room3.paging.PagingSourceDaoReturnTypeConverter
+import com.skyd.fundation.di.get
+import com.skyd.podaura.model.bean.article.ARTICLE_TABLE_NAME
+import com.skyd.podaura.model.bean.article.ArticleBean
+import com.skyd.podaura.model.bean.article.ArticleDeleteResult
+import com.skyd.podaura.model.bean.article.ArticleWithEnclosureBean
+import com.skyd.podaura.model.bean.article.ArticleWithFeed
+import com.skyd.podaura.model.bean.article.ENCLOSURE_TABLE_NAME
+import com.skyd.podaura.model.bean.article.EnclosureBean
+import com.skyd.podaura.model.bean.feed.FEED_TABLE_NAME
+import com.skyd.podaura.model.bean.feed.FeedBean
+import com.skyd.podaura.model.bean.playlist.PLAYLIST_MEDIA_TABLE_NAME
+import com.skyd.podaura.model.bean.playlist.PlaylistArticleBean
+import com.skyd.podaura.model.bean.playlist.PlaylistMediaBean
+import com.skyd.podaura.ui.notification.ArticleUpdatedManager
+import kotlinx.coroutines.flow.Flow
+
+private const val ARTICLE_DELETE_BIND_CHUNK_SIZE = 900
+
+private const val ARTICLES_IN_RANGE_QUERY =
+    "SELECT * FROM $ARTICLE_TABLE_NAME A " +
+            "WHERE ${ArticleBean.DATE_COLUMN} >= :startTimestamp AND ${ArticleBean.DATE_COLUMN} < :endTimestamp AND " +
+            "(NOT :excludeMuted OR NOT EXISTS (" +
+            "    SELECT 1 FROM $FEED_TABLE_NAME F " +
+            "    WHERE F.${FeedBean.URL_COLUMN} = A.${ArticleBean.FEED_URL_COLUMN} AND " +
+            "    ${FeedBean.MUTE_COLUMN} = 1))" +
+            "ORDER BY ${ArticleBean.DATE_COLUMN} ASC, ${ArticleBean.ARTICLE_ID_COLUMN} ASC"
+
+@Dao
+@DaoReturnTypeConverters(PagingSourceDaoReturnTypeConverter::class)
+interface ArticleDao {
+    // null always compares false in '='
+    @Query(
+        "SELECT * from `$ARTICLE_TABLE_NAME` " +
+                "WHERE ${ArticleBean.GUID_COLUMN} = :guid AND " +
+                "${ArticleBean.FEED_URL_COLUMN} = :feedUrl"
+
+    )
+    suspend fun queryArticleByGuid(
+        guid: String?,
+        feedUrl: String,
+    ): ArticleBean?
+
+    // null always compares false in '='
+    @Query(
+        "SELECT * from `$ARTICLE_TABLE_NAME` " +
+                "WHERE ${ArticleBean.LINK_COLUMN} = :link AND " +
+                "${ArticleBean.FEED_URL_COLUMN} = :feedUrl"
+    )
+    suspend fun queryArticleByLink(
+        link: String?,
+        feedUrl: String,
+    ): ArticleBean?
+
+    @Transaction
+    @Upsert
+    suspend fun innerUpsertArticle(articleBean: ArticleBean)
+
+    @Transaction
+    suspend fun insertListIfNotExist(articleWithEnclosureList: List<ArticleWithEnclosureBean>) {
+        val insertedArticleIds = mutableListOf<String>()
+        articleWithEnclosureList.forEach { articleWithEnclosure ->
+            val article = articleWithEnclosure.article
+            // Duplicate article by guid or link
+            val guid = article.guid
+            val link = article.link
+            var newArticle: ArticleBean? = null
+            if (guid != null) {
+                newArticle = queryArticleByGuid(
+                    guid = guid,
+                    feedUrl = article.feedUrl,
+                )
+            } else if (link != null) {
+                newArticle = queryArticleByLink(
+                    link = link,
+                    feedUrl = article.feedUrl,
+                )
+            }
+            if (newArticle == null) {
+                innerUpsertArticle(article)
+                newArticle = article
+                insertedArticleIds += article.articleId
+            } else {
+                // Update all fields except articleId, isRead and isFavorite
+                newArticle = article.copy(
+                    articleId = newArticle.articleId,
+                    isRead = newArticle.isRead,
+                    isFavorite = newArticle.isFavorite,
+                )
+                innerUpsertArticle(newArticle)
+                articleWithEnclosure.article = newArticle
+            }
+
+            // Update modules
+            val media = articleWithEnclosure.media
+            if (media != null) {
+                get<RssModuleDao>().upsert(
+                    media.copy(articleId = newArticle.articleId)
+                )
+            }
+
+            // Update category
+            val categories = articleWithEnclosure.categories
+            if (categories.isNotEmpty()) {
+                get<ArticleCategoryDao>().upsert(
+                    categories.map { it.copy(articleId = newArticle.articleId) }
+                )
+            }
+            get<EnclosureDao>().upsert(
+                articleWithEnclosure.enclosures.map { enclosure ->
+                    enclosure.copy(articleId = newArticle.articleId)
+                }
+            )
+        }
+        if (insertedArticleIds.isNotEmpty()) ArticleUpdatedManager.send(insertedArticleIds)
+    }
+
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN} FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.FEED_URL_COLUMN} LIKE :feedUrl AND " +
+                "NOT (:keepPlaylistArticles AND EXISTS(SELECT 1 FROM $PLAYLIST_MEDIA_TABLE_NAME pl " +
+                "    WHERE pl.${PlaylistMediaBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN})) AND " +
+                "(:keepUnread = 0 OR ${ArticleBean.IS_READ_COLUMN} = 1) AND " +
+                "(:keepFavorite = 0 OR ${ArticleBean.IS_FAVORITE_COLUMN} = 0)"
+    )
+    suspend fun getArticleIdsToDeleteInFeed(
+        feedUrl: String,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+    ): List<String>
+
+    @Transaction
+    suspend fun deleteArticleInFeed(
+        feedUrl: String,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val candidateArticleIds = getArticleIdsToDeleteInFeed(
+            feedUrl = feedUrl,
+            keepPlaylistArticles = keepPlaylistArticles,
+            keepUnread = keepUnread,
+            keepFavorite = keepFavorite,
+        )
+        return deleteCandidateArticles(candidateArticleIds, downloadProtectedArticleIds)
+    }
+
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN} FROM $ARTICLE_TABLE_NAME WHERE " +
+                "${ArticleBean.FEED_URL_COLUMN} IN (" +
+                "    SELECT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME " +
+                "    WHERE ${FeedBean.GROUP_ID_COLUMN} IS NULL AND :groupId IS NULL OR " +
+                "    ${FeedBean.GROUP_ID_COLUMN} = :groupId) AND " +
+                "NOT (:keepPlaylistArticles AND EXISTS(SELECT 1 FROM $PLAYLIST_MEDIA_TABLE_NAME pl " +
+                "    WHERE pl.${PlaylistMediaBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN})) AND " +
+                "(:keepUnread = 0 OR ${ArticleBean.IS_READ_COLUMN} = 1) AND " +
+                "(:keepFavorite = 0 OR ${ArticleBean.IS_FAVORITE_COLUMN} = 0)"
+    )
+    suspend fun getArticleIdsToDeleteInGroup(
+        groupId: String?,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+    ): List<String>
+
+    @Transaction
+    suspend fun deleteArticlesInGroup(
+        groupId: String?,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val candidateArticleIds = getArticleIdsToDeleteInGroup(
+            groupId = groupId,
+            keepPlaylistArticles = keepPlaylistArticles,
+            keepUnread = keepUnread,
+            keepFavorite = keepFavorite,
+        )
+        return deleteCandidateArticles(candidateArticleIds, downloadProtectedArticleIds)
+    }
+
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN} FROM $ARTICLE_TABLE_NAME WHERE " +
+                "(${ArticleBean.UPDATE_AT_COLUMN} IS NULL OR " +
+                "${ArticleBean.UPDATE_AT_COLUMN} <= :timestamp) AND " +
+                "NOT (:keepPlaylistArticles AND EXISTS(SELECT 1 FROM $PLAYLIST_MEDIA_TABLE_NAME pl " +
+                "    WHERE pl.${PlaylistMediaBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN})) AND " +
+                "(:keepUnread = 0 OR ${ArticleBean.IS_READ_COLUMN} = 1) AND " +
+                "(:keepFavorite = 0 OR ${ArticleBean.IS_FAVORITE_COLUMN} = 0)"
+    )
+    suspend fun getArticleIdsToDeleteBefore(
+        timestamp: Long,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+    ): List<String>
+
+    @Transaction
+    suspend fun deleteArticleBefore(
+        timestamp: Long,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val candidateArticleIds = getArticleIdsToDeleteBefore(
+            timestamp = timestamp,
+            keepPlaylistArticles = keepPlaylistArticles,
+            keepUnread = keepUnread,
+            keepFavorite = keepFavorite,
+        )
+        return deleteCandidateArticles(candidateArticleIds, downloadProtectedArticleIds)
+    }
+
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN} FROM $ARTICLE_TABLE_NAME WHERE " +
+                "NOT (:keepPlaylistArticles AND EXISTS(SELECT 1 FROM $PLAYLIST_MEDIA_TABLE_NAME pl " +
+                "    WHERE pl.${PlaylistMediaBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN})) AND " +
+                "(:keepUnread = 0 OR ${ArticleBean.IS_READ_COLUMN} = 1) AND " +
+                "(:keepFavorite = 0 OR ${ArticleBean.IS_FAVORITE_COLUMN} = 0) AND " +
+                "(" +
+                "  ${ArticleBean.UPDATE_AT_COLUMN} IS NULL OR (" +
+                "    SELECT COUNT(*) " +
+                "    FROM $ARTICLE_TABLE_NAME AS a2 " +
+                "    WHERE " +
+                "      a2.${ArticleBean.FEED_URL_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.FEED_URL_COLUMN} AND " +
+                "      a2.${ArticleBean.UPDATE_AT_COLUMN} > `$ARTICLE_TABLE_NAME`.${ArticleBean.UPDATE_AT_COLUMN}" +
+                "  ) >= :count" +
+                ")"
+    )
+    suspend fun getArticleIdsToDeleteExceed(
+        count: Int,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+    ): List<String>
+
+    @Transaction
+    suspend fun deleteArticleExceed(
+        count: Int,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val candidateArticleIds = getArticleIdsToDeleteExceed(
+            count = count,
+            keepPlaylistArticles = keepPlaylistArticles,
+            keepUnread = keepUnread,
+            keepFavorite = keepFavorite,
+        )
+        return deleteCandidateArticles(candidateArticleIds, downloadProtectedArticleIds)
+    }
+
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN} FROM $ARTICLE_TABLE_NAME WHERE " +
+                "${ArticleBean.ARTICLE_ID_COLUMN} = :articleId AND " +
+                "NOT (:keepPlaylistArticles AND EXISTS(SELECT 1 FROM $PLAYLIST_MEDIA_TABLE_NAME pl " +
+                "    WHERE pl.${PlaylistMediaBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN})) AND " +
+                "(:keepUnread = 0 OR ${ArticleBean.IS_READ_COLUMN} = 1) AND " +
+                "(:keepFavorite = 0 OR ${ArticleBean.IS_FAVORITE_COLUMN} = 0)"
+    )
+    suspend fun getArticleIdsToDelete(
+        articleId: String,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+    ): List<String>
+
+    @Transaction
+    suspend fun deleteArticle(
+        articleId: String,
+        keepPlaylistArticles: Boolean,
+        keepUnread: Boolean,
+        keepFavorite: Boolean,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val candidateArticleIds = getArticleIdsToDelete(
+            articleId = articleId,
+            keepPlaylistArticles = keepPlaylistArticles,
+            keepUnread = keepUnread,
+            keepFavorite = keepFavorite,
+        )
+        return deleteCandidateArticles(candidateArticleIds, downloadProtectedArticleIds)
+    }
+
+    @Query(
+        "DELETE FROM $ARTICLE_TABLE_NAME WHERE " +
+                "${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun innerDeleteArticlesByIds(articleIds: List<String>): Int
+
+    suspend fun deleteCandidateArticles(
+        candidateArticleIds: List<String>,
+        downloadProtectedArticleIds: List<String>,
+    ): ArticleDeleteResult {
+        val protectedArticleIds = downloadProtectedArticleIds.toHashSet()
+        val articleIdsToDelete = candidateArticleIds.filterNot { it in protectedArticleIds }
+        var deletedCount = 0
+        for (articleIds in articleIdsToDelete.chunked(ARTICLE_DELETE_BIND_CHUNK_SIZE)) {
+            deletedCount += innerDeleteArticlesByIds(articleIds)
+        }
+        return ArticleDeleteResult(
+            deletedCount = deletedCount,
+            downloadProtectedCount = candidateArticleIds.count { it in protectedArticleIds },
+        )
+    }
+
+    @Transaction
+    @RawQuery(observedEntities = [FeedBean::class, ArticleBean::class, EnclosureBean::class])
+    fun getArticlePagingSource(sql: RoomRawQuery): PagingSource<Int, ArticleWithFeed>
+
+    @Transaction
+    @Query(ARTICLES_IN_RANGE_QUERY)
+    fun getArticlesIn(
+        startTimestamp: Long,
+        endTimestamp: Long,
+        excludeMuted: Boolean,
+    ): PagingSource<Int, ArticleWithFeed>
+
+    @Transaction
+    @Query(ARTICLES_IN_RANGE_QUERY)
+    suspend fun getArticleListIn(
+        startTimestamp: Long,
+        endTimestamp: Long,
+        excludeMuted: Boolean,
+    ): List<ArticleWithFeed>
+
+    @Transaction
+    @Query(
+        "SELECT DISTINCT CAST(strftime('%H', datetime(${ArticleBean.DATE_COLUMN} / 1000, 'unixepoch', 'localtime')) AS INTEGER) AS H " +
+                "FROM $ARTICLE_TABLE_NAME A " +
+                "WHERE ${ArticleBean.DATE_COLUMN} >= :startTimestamp AND ${ArticleBean.DATE_COLUMN} < :endTimestamp AND " +
+                "(NOT :excludeMuted OR NOT EXISTS (" +
+                "    SELECT 1 FROM $FEED_TABLE_NAME F " +
+                "    WHERE F.${FeedBean.URL_COLUMN} = A.${ArticleBean.FEED_URL_COLUMN} AND " +
+                "    ${FeedBean.MUTE_COLUMN} = 1))" +
+                "ORDER BY H ASC"
+    )
+    fun getArticleHoursIn(
+        startTimestamp: Long,
+        endTimestamp: Long,
+        excludeMuted: Boolean,
+    ): Flow<List<Int>>
+
+
+    @Transaction
+    @RawQuery(observedEntities = [ArticleBean::class])
+    suspend fun getArticleList(sql: RoomRawQuery): List<ArticleWithFeed>
+
+    @RawQuery
+    suspend fun getArticleIds(sql: RoomRawQuery): List<String>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun getArticleWithFeedListByIds(articleIds: List<String>): List<ArticleWithFeed>
+
+    @Transaction
+    @Query(
+        "SELECT ${ArticleBean.ARTICLE_ID_COLUMN}, ${ArticleBean.TITLE_COLUMN}, ${ArticleBean.DATE_COLUMN} " +
+                "FROM $ARTICLE_TABLE_NAME WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun getPlaylistArticlesByIds(articleIds: List<String>): List<PlaylistArticleBean>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    fun observeArticleWithFeedListByIds(articleIds: List<String>): Flow<List<ArticleWithFeed>>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun getArticleWithEnclosureListByIds(articleIds: List<String>): List<ArticleWithEnclosureBean>
+
+    @Transaction
+    @Query(
+        "SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun getArticleListByIds(articleIds: List<String>): List<ArticleBean>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM $ARTICLE_TABLE_NAME 
+        WHERE ${ArticleBean.ARTICLE_ID_COLUMN} LIKE :articleId
+        """
+    )
+    fun getArticleWithEnclosures(articleId: String): Flow<ArticleWithEnclosureBean?>
+
+    @Transaction
+    @Query(
+        "SELECT EXISTS (SELECT 1 FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} LIKE :articleId)"
+    )
+    suspend fun exists(articleId: String): Int
+
+    @Transaction
+    @Query(
+        "WITH temp_target(feed_url, update_time) AS (SELECT ${ArticleBean.FEED_URL_COLUMN}, ${ArticleBean.DATE_COLUMN} FROM $ARTICLE_TABLE_NAME WHERE ${ArticleBean.ARTICLE_ID_COLUMN} = :articleId), " +
+                "temp_enclosure(enclosure_count) AS (SELECT COUNT(1) FROM $ENCLOSURE_TABLE_NAME WHERE ${EnclosureBean.ARTICLE_ID_COLUMN} = `$ARTICLE_TABLE_NAME`.${ArticleBean.ARTICLE_ID_COLUMN}) " +
+                "SELECT * FROM ( " +
+                "    SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "    WHERE ${ArticleBean.FEED_URL_COLUMN} = (SELECT feed_url FROM temp_target) AND " +
+                "       (SELECT enclosure_count FROM temp_enclosure) > 0 AND " +
+                "       (${ArticleBean.DATE_COLUMN} > (SELECT update_time FROM temp_target) " +
+                "           OR (${ArticleBean.DATE_COLUMN} = (SELECT update_time FROM temp_target) AND ${ArticleBean.ARTICLE_ID_COLUMN} > :articleId)) " +
+                "    ORDER BY ${ArticleBean.DATE_COLUMN} ASC, ${ArticleBean.ARTICLE_ID_COLUMN} ASC " +
+                "    LIMIT :neighborCount " +
+                ")" +
+                "UNION ALL " +
+                "SELECT * FROM $ARTICLE_TABLE_NAME WHERE ${ArticleBean.ARTICLE_ID_COLUMN} = :articleId " +
+                "UNION ALL " +
+                "SELECT * FROM ( " +
+                "    SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "    WHERE ${ArticleBean.FEED_URL_COLUMN} = (SELECT feed_url FROM temp_target) AND " +
+                "       (SELECT enclosure_count FROM temp_enclosure) > 0 AND " +
+                "       (${ArticleBean.DATE_COLUMN} < (SELECT update_time FROM temp_target) " +
+                "           OR (${ArticleBean.DATE_COLUMN} = (SELECT update_time FROM temp_target) AND ${ArticleBean.ARTICLE_ID_COLUMN} < :articleId)) " +
+                "    ORDER BY ${ArticleBean.DATE_COLUMN} DESC, ${ArticleBean.ARTICLE_ID_COLUMN} DESC " +
+                "    LIMIT :neighborCount " +
+                ")" +
+
+                "ORDER BY ${ArticleBean.DATE_COLUMN} DESC, ${ArticleBean.ARTICLE_ID_COLUMN} DESC "
+    )
+    suspend fun getArticlesForPlaylist(
+        articleId: String,
+        neighborCount: Int = 50
+    ): List<ArticleWithFeed>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM $ARTICLE_TABLE_NAME 
+        WHERE ${ArticleBean.ARTICLE_ID_COLUMN} LIKE :articleId
+        """
+    )
+    fun getArticleWithFeed(articleId: String): Flow<ArticleWithFeed?>
+
+    @Query(
+        "SELECT ${ArticleBean.IS_FAVORITE_COLUMN} FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} = :articleId"
+    )
+    fun observeArticleFavorite(articleId: String): Flow<Boolean?>
+
+    @Query(
+        "SELECT * FROM $ARTICLE_TABLE_NAME " +
+                "WHERE ${ArticleBean.FEED_URL_COLUMN} = :feedUrl " +
+                "ORDER BY `${ArticleBean.DATE_COLUMN}` DESC LIMIT 1"
+    )
+    suspend fun queryLatestByFeedUrl(feedUrl: String): ArticleBean?
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_FAVORITE_COLUMN} = :favorite
+        WHERE ${ArticleBean.ARTICLE_ID_COLUMN} = :articleId
+        """
+    )
+    suspend fun favoriteArticle(articleId: String, favorite: Boolean): Int
+
+    @Transaction
+    @Query(
+        "UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_FAVORITE_COLUMN} = :favorite " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun favoriteArticles(articleIds: List<String>, favorite: Boolean): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_READ_COLUMN} = :read
+        WHERE ${ArticleBean.ARTICLE_ID_COLUMN} = :articleId
+        """
+    )
+    suspend fun readArticle(articleId: String, read: Boolean): Int
+
+    @Transaction
+    @Query(
+        "UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_READ_COLUMN} = :read " +
+                "WHERE ${ArticleBean.ARTICLE_ID_COLUMN} IN (:articleIds)"
+    )
+    suspend fun readArticles(articleIds: List<String>, read: Boolean): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_READ_COLUMN} = 1
+        WHERE ${ArticleBean.IS_READ_COLUMN} = 0 AND ${ArticleBean.FEED_URL_COLUMN} = :feedUrl
+        """
+    )
+    suspend fun readAllInFeed(feedUrl: String): Int
+
+    @Transaction
+    @Query(
+        """
+        UPDATE $ARTICLE_TABLE_NAME SET ${ArticleBean.IS_READ_COLUMN} = 1
+        WHERE ${ArticleBean.IS_READ_COLUMN} = 0 AND ${ArticleBean.FEED_URL_COLUMN} IN (
+            SELECT DISTINCT ${FeedBean.URL_COLUMN} FROM $FEED_TABLE_NAME
+            WHERE ${FeedBean.GROUP_ID_COLUMN} = :groupId OR
+            :groupId IS NULL AND ${FeedBean.GROUP_ID_COLUMN} IS NULL
+        )
+        """
+    )
+    suspend fun readAllInGroup(groupId: String?): Int
+}

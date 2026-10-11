@@ -1,0 +1,62 @@
+package com.skyd.podaura.ui.screen.article
+
+import com.skyd.mvi.MviIntent
+import com.skyd.podaura.model.bean.playlist.MediaUrlWithArticleIdBean
+import com.skyd.podaura.model.repository.download.SelectedArticleDownloader
+import com.skyd.podaura.model.repository.download.SelectedDownloadPlan
+
+sealed interface ArticleIntent : MviIntent {
+    data class Init(
+        val feedUrls: List<String>,
+        val groupIds: List<String>,
+        val articleIds: List<String>,
+    ) : ArticleIntent
+
+    data class UpdateFilter(
+        val feedUrls: List<String>,
+        val groupIds: List<String>,
+        val articleIds: List<String>,
+        val filterMask: Int,
+    ) : ArticleIntent
+
+    data class Refresh(
+        val feedUrls: List<String>,
+        val groupIds: List<String>,
+        val articleIds: List<String>,
+    ) : ArticleIntent
+
+    data class Favorite(val articleId: String, val favorite: Boolean) : ArticleIntent
+    data class Read(val articleId: String, val read: Boolean) : ArticleIntent
+    data class Delete(val articleId: String) : ArticleIntent
+    data class OnEditFeedDialog(val feedUrl: String?) : ArticleIntent
+
+    sealed interface Selection : ArticleIntent {
+        data class Enter(val articleId: String? = null) : Selection
+        data object Exit : Selection
+        data class Toggle(val articleId: String) : Selection
+        data object Clear : Selection
+        data class SelectAll(
+            val feedUrls: List<String>,
+            val groupIds: List<String>,
+            val articleIds: List<String>,
+            val filterMask: Int,
+        ) : Selection
+        data class Download(
+            val articleIds: Set<String>,
+            val downloader: SelectedArticleDownloader,
+        ) : Selection
+        data class ConfirmDownload(
+            val plan: SelectedDownloadPlan,
+            val downloader: SelectedArticleDownloader,
+        ) : Selection
+        data object DismissConfirmation : Selection
+        data class Read(val articleIds: Set<String>, val read: Boolean) : Selection
+        data class Favorite(val articleIds: Set<String>, val favorite: Boolean) : Selection
+        data class PreparePlaylist(val articleIds: Set<String>, val filterMask: Int) : Selection
+        data class AddToPlaylist(
+            val playlistId: String,
+            val medias: List<MediaUrlWithArticleIdBean>,
+        ) : Selection
+        data object DismissPlaylist : Selection
+    }
+}

@@ -1,23 +1,36 @@
 <div align="center">
     <div>
-        <img src="doc/image/AniVu.svg" style="height: 210px"/>
+        <img src="doc/image/PodAura.svg" style="height: 210px"/>
     </div>
-    <h1>🥰 AniVu</h1>
+    <h1>🥰 PodAura</h1>
+    <p><b>P</b>odcasts <b>O</b>rganized <b>D</b>iversely with <b>A</b>udio-Video <b>U</b>nification for <b>R</b>ich <b>A</b>ccess</p>
     <p>
-        <a href="https://github.com/SkyD666/AniVu/actions" style="text-decoration:none">
-            <img src="https://img.shields.io/github/actions/workflow/status/SkyD666/AniVu/pre_release.yml?branch=master&style=for-the-badge" alt="GitHub Workflow Status"  />
+        <a href="https://github.com/SkyD666/PodAura/actions" style="text-decoration:none">
+            <img src="https://img.shields.io/github/actions/workflow/status/SkyD666/PodAura/pre_release.yml?branch=master&style=for-the-badge" alt="GitHub Workflow Status"  />
         </a>
-        <a href="https://github.com/SkyD666/AniVu/releases/latest" style="text-decoration:none">
-            <img src="https://img.shields.io/github/v/release/SkyD666/AniVu?display_name=release&style=for-the-badge" alt="GitHub release (latest by date)"/>
+        <a href="https://github.com/SkyD666/PodAura/releases/latest" style="text-decoration:none">
+            <img src="https://img.shields.io/github/v/release/SkyD666/PodAura?display_name=release&style=for-the-badge" alt="GitHub release (latest by date)"/>
         </a>
-        <a href="https://github.com/SkyD666/AniVu/releases/latest" style="text-decoration:none" >
-            <img src="https://img.shields.io/github/downloads/SkyD666/AniVu/total?style=for-the-badge" alt="GitHub all downloads"/>
+        <a href="https://f-droid.org/packages/com.skyd.anivu/" style="text-decoration:none">
+            <img src="https://img.shields.io/f-droid/v/com.skyd.anivu?style=for-the-badge&logo=F-Droid&color=1976d2" alt="F-Droid Version"/>
+        </a>
+        <a href="https://github.com/SkyD666/PodAura/releases/latest" style="text-decoration:none" >
+            <img src="https://img.shields.io/github/downloads/SkyD666/PodAura/total?style=for-the-badge" alt="GitHub all downloads"/>
         </a>
         <a href="https://www.android.com/versions/nougat-7-0" style="text-decoration:none" >
-            <img src="https://img.shields.io/badge/Android 7.0+-brightgreen?style=for-the-badge&logo=android&logoColor=white" alt="Support platform"/>
+            <img src="https://img.shields.io/badge/Android 7.0+-brightgreen?style=for-the-badge&logo=android&logoColor=white" alt="Android"/>
         </a>
-        <a href="https://github.com/SkyD666/AniVu/blob/master/LICENSE" style="text-decoration:none" >
-            <img src="https://img.shields.io/github/license/SkyD666/AniVu?style=for-the-badge" alt="GitHub license"/>
+        <a href="https://www.apple.com/os/ios/" style="text-decoration:none" >
+            <img src="https://img.shields.io/badge/iOS-black?style=for-the-badge&logo=apple&logoColor=white" alt="iOS"/>
+        </a>
+        <a href="https://www.apple.com/os/macos/" style="text-decoration:none" >
+            <img src="https://img.shields.io/badge/macOS-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"/>
+        </a>
+        <a href="https://www.microsoft.com/windows/" style="text-decoration:none" >
+            <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" alt="Windows"/>
+        </a>
+        <a href="https://github.com/SkyD666/PodAura/blob/master/LICENSE" style="text-decoration:none" >
+            <img src="https://img.shields.io/github/license/SkyD666/PodAura?style=for-the-badge" alt="GitHub license"/>
         </a>
         <a href="https://t.me/SkyD666Chat" style="text-decoration:none" >
             <img src="https://img.shields.io/badge/Telegram-2CA5E0?logo=telegram&logoColor=white&style=for-the-badge" alt="Telegram"/>
@@ -27,65 +40,87 @@
         </a>
     </p>
     <p>
-        <b>AniVu</b>, an <b>all-in-one tool</b> for <b>RSS anime subscription and updates</b>, <b>bit torrent downloads</b>, and <b>video playback</b>.
+        An <b>all-in-one Podcast app</b> for <b>RSS subscription and updates</b>, <b>media downloads</b> and <b>playback</b>.
     </p>
     <p>
-        AniVu utilizes the <b><a href="https://developer.android.com/topic/architecture#recommended-app-arch">MVI</a></b> architecture and fully adopts the <b><a href="https://m3.material.io/">Material You</a></b> design style. All pages are developed using <b>Android View</b>.
+        PodAura utilizes the <b><a href="https://developer.android.com/topic/architecture#recommended-app-arch">MVI</a></b> architecture and fully adopts the <b><a href="https://m3.material.io/">Material You</a></b> design style. All pages are developed using <b>Compose Multiplatform</b>.
     </p>
     <p>
-        <b><a href="doc/readme/README-zh-rCN.md">中文</a></b>
+        <b><a href="https://crowdin.com/project/podaura">Help us translate</a></b>
     </p>
 </div>
 
-
+<a href="https://f-droid.org/packages/com.skyd.anivu"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80" align="middle" style="vertical-align: middle;"></a>
+<a href="https://apps.microsoft.com/detail/9NZFWMWFGV1C?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">
+    <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" align="middle" style="vertical-align: middle;"/>
+</a>
 
 ## 💡 Features
 
 1. **Subscribe to RSS**, Update RSS, **Read** RSS
 2. **Automatically update RSS** subscriptions
-3. **Download enclosures** (enclosure tags) of **torrent or magnet** links in RSS articles
-4. **Seeding** downloaded files
-5. **Play downloaded videos**
-6. Support variable playback **speed**, **long press** to speed up playback
-7. **Double-finger** gesture to **rotate and zoom** video
+3. **Download** enclosures (enclosure tags) in RSS articles
+4. **Automatically download** podcast media
+5. **Play media enclosures or downloaded videos**
+6. Support variable playback **speed**, setup **audio track**, **subtitle track**, etc
+7. **Double-finger** gesture to **rotate and zoom** video, **long press** to speed up playback
 8. **Swipe** on the video to **control volume**, **brightness**, and **playback position**
 9. **Searching** existing **RSS subscription content**
 10. **Play other videos on the phone**
-11. Support **dark mode**
-12. ......
-
-## 🚧 Todo
-
-1. Automatically **download new videos**
-2. **Customize player settings**, such as default screen scale, surface type used by the player, and more
-3. **Float** video playback **window**
-4. **Automatically** play the **next video**
+11. Support **custom MPV player**
+12. Support **custom playlists**
+13. Support Android **Picture in Picture**
+14. Support **import and export** subscriptions via **OPML**
+15. Support **dark mode**
+16. ......
 
 ## 🤩 Screenshots
 
-<img src="doc/image/en/ic_rss_fragment.jpg" alt="ic_rss_fragment" style="zoom:80%;" /> <img src="doc/image/en/ic_media_fragment.jpg" alt="ic_media_fragment" style="zoom:80%;" />
-<img src="doc/image/en/ic_article_fragment.jpg" alt="ic_article_fragment" style="zoom:80%;" /> <img src="doc/image/en/ic_read_fragment.jpg" alt="ic_read_fragment" style="zoom:80%;" />
-<img src="doc/image/en/ic_read_fragment_enclosure.jpg" alt="ic_read_fragment_enclosure" style="zoom:80%;" /> <img src="doc/image/en/ic_download_fragment.jpg" alt="ic_download_fragment" style="zoom:80%;" />
-<img src="doc/image/en/ic_rss_config_fragment.jpg" alt="ic_rss_config_fragment" style="zoom:80%;" /> <img src="doc/image/en/ic_about_fragment.jpg" alt="ic_about_fragment" style="zoom:80%;" />
-<img src="doc/image/en/ic_player_activity.png" alt="ic_player_activity" style="zoom:80%;" />
+<img src="doc/image/en/ic_rss_screen.jpg" alt="ic_rss_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_rss_screen_edit.jpg" alt="ic_rss_screen_edit" style="zoom:80%;" />
+<img src="doc/image/en/ic_article_screen.jpg" alt="ic_article_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_read_screen.jpg" alt="ic_read_screen" style="zoom:80%;" />
+<img src="doc/image/en/ic_media_screen.jpg" alt="ic_media_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_player_activity_port.jpg" alt="ic_download_screen" style="zoom:80%;" />
+<img src="doc/image/en/ic_history_screen.jpg" alt="ic_media_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_download_screen.jpg" alt="ic_download_screen" style="zoom:80%;" />
+<img src="doc/image/en/ic_setting_screen.jpg" alt="ic_setting_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_appearance_screen.jpg" alt="ic_appearance_screen" style="zoom:80%;" />
+<img src="doc/image/en/ic_rss_config_screen.jpg" alt="ic_rss_config_screen" style="zoom:80%;" /> <img src="doc/image/en/ic_about_screen.jpg" alt="ic_about_screen" style="zoom:80%;" />
+<img src="doc/image/en/ic_player_activity.jpg" alt="ic_player_activity" style="zoom:80%;" />
+
+## 🌏 Translation
+
+If you are interested, please help us **translate**, thank you.
+
+<a title="Crowdin" target="_blank" href="https://crowdin.com/project/podaura"><img src="https://badges.crowdin.net/podaura/localized.svg"></a>
 
 ## 🛠 Primary technology stack
 
 - **MVI** Architecture
-- Kotlin ﻿**Coroutines and Flow**
+- **Compose** Multiplatform
+- Kotlin **Coroutines and Flow**
 - **Material You**
 - **ViewModel**
-- **Room**
+- **Room 3**
 - **Paging 3**
-- **Hilt**
-- Media3 **ExoPlayer**
+- **Ktor**
+- **Koin**
+- **MPV**
 - **WorkManager**
 - **DataStore**
+- **KSP**
 - Splash Screen
 - Navigation
 - Coil
+- JNA
 
-## ✨ Other works
+## ✨ Star History
+
+<a href="https://www.star-history.com/?repos=SkyD666%2FPodAura&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=SkyD666/PodAura&type=date&theme=dark&legend=top-left&sealed_token=IHvGHaiHoGSUHYja9XSCs2WoP4QLqPF0-KmLMIHIBThhck30mWEuZyJmGWVM2ZyqY1iJ5ajrG7mgGUuT6DUi5q7SMmrSWFv2Sm8XBoy6UqfwsB267F2BBO3Cr8TQ_W0BT-8BKi1GY54sCiPo0sVTLw52_uwhi76unYaBBLRHCcYzEmwaAd8ey0dd7d0l" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=SkyD666/PodAura&type=date&legend=top-left&sealed_token=IHvGHaiHoGSUHYja9XSCs2WoP4QLqPF0-KmLMIHIBThhck30mWEuZyJmGWVM2ZyqY1iJ5ajrG7mgGUuT6DUi5q7SMmrSWFv2Sm8XBoy6UqfwsB267F2BBO3Cr8TQ_W0BT-8BKi1GY54sCiPo0sVTLw52_uwhi76unYaBBLRHCcYzEmwaAd8ey0dd7d0l" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=SkyD666/PodAura&type=date&legend=top-left&sealed_token=IHvGHaiHoGSUHYja9XSCs2WoP4QLqPF0-KmLMIHIBThhck30mWEuZyJmGWVM2ZyqY1iJ5ajrG7mgGUuT6DUi5q7SMmrSWFv2Sm8XBoy6UqfwsB267F2BBO3Cr8TQ_W0BT-8BKi1GY54sCiPo0sVTLw52_uwhi76unYaBBLRHCcYzEmwaAd8ey0dd7d0l" />
+ </picture>
+</a>
+
+## 🎈 Other works
 
 <table>
 <thead>

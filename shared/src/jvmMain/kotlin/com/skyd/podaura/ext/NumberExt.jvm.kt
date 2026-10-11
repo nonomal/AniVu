@@ -1,0 +1,35 @@
+package com.skyd.podaura.ext
+
+import com.skyd.fundation.jna.mac.NSByteCountFormatter
+import com.skyd.fundation.jna.windows.Shlwapi
+import com.skyd.fundation.util.Platform
+import com.skyd.fundation.util.platform
+
+
+actual fun Long.fileSize(): String {
+    when (platform) {
+        Platform.Android,
+        Platform.iOS,
+        Platform.macOS_Native -> error("Not supported platform")
+
+        Platform.Linux -> {
+            TODO()
+        }
+
+        Platform.macOS_Jvm -> {
+            return NSByteCountFormatter.stringFromByteCount(
+                byteCount = this,
+                countStyle = NSByteCountFormatter.CountStyle.FILE,
+            )
+        }
+
+        Platform.Windows -> {
+            return Shlwapi.strFormatByteSizeW(byteCount = this)
+        }
+    }
+}
+
+actual fun Float.toPercentage(point: Int): String {
+    require(point >= 0) { "Float.toPercentage error, point should be positive" }
+    return "%.${point}f%%".format(this * 100)
+}

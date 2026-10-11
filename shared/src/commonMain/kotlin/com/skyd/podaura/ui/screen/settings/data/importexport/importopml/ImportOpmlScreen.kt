@@ -1,0 +1,275 @@
+package com.skyd.podaura.ui.screen.settings.data.importexport.importopml
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.Segment
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import com.skyd.compone.component.ComponeExtendedFloatingActionButton
+import com.skyd.compone.component.ComponeScaffold
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.connectedButtonShapes
+import com.skyd.compone.component.dialog.WaitingDialog
+import com.skyd.fundation.util.Platform
+import com.skyd.fundation.util.platform
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.ext.asPlatformFile
+import com.skyd.podaura.ext.showSnackbar
+import com.skyd.podaura.model.repository.importexport.opml.ImportOpmlConflictStrategy
+import com.skyd.podaura.ui.component.navigation.ExternalUrlHandler
+import com.skyd.podaura.ui.component.navigation.deeplink.DeepLinkPattern
+import com.skyd.podaura.ui.notification.PlatformArticleNotification
+import com.skyd.settings.BaseSettingsItem
+import com.skyd.settings.SettingsLazyColumn
+import com.skyd.settings.TipSettingsItem
+import com.skyd.settings.plus
+import io.github.vinceglb.filekit.PlatformFile
+import io.github.vinceglb.filekit.dialogs.FileKitMode
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.path
+import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.failed_msg
+import podaura.shared.generated.resources.import_opml_result
+import podaura.shared.generated.resources.import_opml_screen_desc
+import podaura.shared.generated.resources.import_opml_screen_import
+import podaura.shared.generated.resources.import_opml_screen_name
+import podaura.shared.generated.resources.import_opml_screen_on_conflict
+import podaura.shared.generated.resources.import_opml_screen_opml_not_selected
+import podaura.shared.generated.resources.import_opml_screen_select_file
+
+internal val OpmlFileSaver = Saver<PlatformFile?, String>(
+    save = { it?.path },
+    restore = { it.asPlatformFile() },
+)
+
+@Serializable
+data class ImportOpmlRoute(val opmlFile: PlatformFile? = null) : NavKey {
+    companion object {
+        @Composable
+        fun ImportOpmlLauncher(route: ImportOpmlRoute) {
+            ImportOpmlScreen(initialFile = route.opmlFile)
+        }
+    }
+}
+
+@Serializable
+data class ImportOpmlDeepLinkRoute(
+    @SerialName(ExternalUrlHandler.UrlData.URL_NAME)
+    val opmlUrl: String? = null,
+) : NavKey {
+    companion object {
+        val deepLinkPattern = DeepLinkPattern(
+            serializer(),
+            urlPattern = null,
+            mimeTypes = listOf(
+                "text/xml",
+                "application/xml",
+                "text/x-opml",
+                "application/x-opml+xml"
+            )
+        )
+
+        @Composable
+        fun ImportOpmlDeepLinkLauncher(route: ImportOpmlDeepLinkRoute) {
+            val file = remember(route.opmlUrl) {
+                route.opmlUrl?.takeIf { it.isNotBlank() }?.asPlatformFile()
+            }
+            ImportOpmlScreen(initialFile = file)
+        }
+    }
+}
+
+@Composable
+fun ImportOpmlScreen(
+    initialFile: PlatformFile? = null,
+    viewModel: ImportOpmlViewModel = koinViewModel(),
+    windowInsets: WindowInsets = WindowInsets.safeDrawing
+) {
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+    var selectedImportStrategyIndex by rememberSaveable { mutableIntStateOf(0) }
+
+    val dispatch = viewModel.getDispatcher(startWith = ImportOpmlIntent.Init)
+
+    // Android recreates its Activity on rotation; Apple needs the original security-scoped URL.
+    var opmlFile by if (platform == Platform.Android) {
+        rememberSaveable(initialFile, stateSaver = OpmlFileSaver) { mutableStateOf(initialFile) }
+    } else {
+        remember(initialFile) { mutableStateOf(initialFile) }
+    }
+    val filePickerLauncher = rememberFilePickerLauncher(
+        type = FileKitType.File(),
+        mode = FileKitMode.Single,
+    ) { file ->
+        if (file != null) {
+            opmlFile = file
+        }
+    }
+
+    val lazyListState = rememberLazyListState()
+    var fabHeight by remember { mutableStateOf(0.dp) }
+
+    ComponeScaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.LargeFlexible,
+                scrollBehavior = scrollBehavior,
+                title = { Text(text = stringResource(Res.string.import_opml_screen_name)) },
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+        },
+        floatingActionButton = {
+            ComponeExtendedFloatingActionButton(
+                text = { Text(text = stringResource(Res.string.import_opml_screen_import)) },
+                icon = { Icon(imageVector = Icons.Default.Done, contentDescription = null) },
+                onClick = {
+                    val selectedFile = opmlFile
+                    if (selectedFile == null) {
+                        snackbarHostState.showSnackbar(
+                            scope = scope,
+                            message = Res.string.import_opml_screen_opml_not_selected,
+                        )
+                    } else {
+                        dispatch(
+                            ImportOpmlIntent.ImportOpml(
+                                opmlFile = selectedFile,
+                                strategy = ImportOpmlConflictStrategy.strategies[selectedImportStrategyIndex],
+                            )
+                        )
+                    }
+                },
+                onSizeWithSinglePaddingChanged = { _, height -> fabHeight = height },
+                contentDescription = null,
+            )
+        },
+        contentWindowInsets = windowInsets
+    ) { innerPadding ->
+        SettingsLazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = innerPadding + PaddingValues(bottom = fabHeight),
+            state = lazyListState,
+        ) {
+            group {
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(image = Icons.AutoMirrored.Outlined.Segment),
+                        text = stringResource(Res.string.import_opml_screen_select_file),
+                        descriptionText = opmlFile?.path?.ifBlank { null },
+                        onClick = { filePickerLauncher.launch() }
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(image = Icons.AutoMirrored.Outlined.HelpOutline),
+                        text = stringResource(Res.string.import_opml_screen_on_conflict),
+                        description = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(
+                                    space = ButtonGroupDefaults.ConnectedSpaceBetween,
+                                    alignment = Alignment.CenterHorizontally,
+                                ),
+                            ) {
+                                ImportOpmlConflictStrategy.strategies.forEachIndexed { index, proxy ->
+                                    ToggleButton(
+                                        checked = index == selectedImportStrategyIndex,
+                                        onCheckedChange = {
+                                            if (it) selectedImportStrategyIndex = index
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .semantics { role = Role.RadioButton },
+                                        shapes = ButtonGroupDefaults.connectedButtonShapes(
+                                            list = ImportOpmlConflictStrategy.strategies,
+                                            index = index,
+                                        ),
+                                    ) {
+                                        Text(text = proxy.displayName)
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+                otherItem {
+                    TipSettingsItem(text = stringResource(Res.string.import_opml_screen_desc))
+                }
+            }
+        }
+    }
+
+    WaitingDialog(visible = uiState.loadingDialog)
+
+    MviEventListener(viewModel.singleEvent) { event ->
+        when (event) {
+            is ImportOpmlEvent.ImportOpmlResultEvent.Success -> {
+                if (event.result.importedFeedCount > 0) {
+                    scope.launch {
+                        PlatformArticleNotification.requestPermission(showSettingsIfDenied = false)
+                    }
+                }
+                snackbarHostState.showSnackbar(
+                    getPluralString(
+                        Res.plurals.import_opml_result,
+                        event.result.importedFeedCount,
+                        event.result.importedFeedCount,
+                        event.result.time / 1000f,
+                    ),
+                )
+            }
+
+            is ImportOpmlEvent.ImportOpmlResultEvent.Failed ->
+                snackbarHostState.showSnackbar(getString(Res.string.failed_msg, event.msg))
+        }
+    }
+}

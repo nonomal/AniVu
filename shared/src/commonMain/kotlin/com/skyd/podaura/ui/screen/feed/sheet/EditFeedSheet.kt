@@ -1,0 +1,1072 @@
+package com.skyd.podaura.ui.screen.feed.sheet
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ContextualFlowRow
+import androidx.compose.foundation.layout.ContextualFlowRowOverflow
+import androidx.compose.foundation.layout.ContextualFlowRowOverflowScope
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ToggleOn
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ClearAll
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Http
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.ToggleOff
+import androidx.compose.material.icons.outlined.Workspaces
+import androidx.compose.material.icons.outlined.ZoomIn
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import co.touchlab.kermit.Logger
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.blockString
+import com.skyd.compone.component.connectedButtonShapes
+import com.skyd.compone.component.dialog.ComponeDialog
+import com.skyd.compone.component.dialog.DeleteWarningDialog
+import com.skyd.compone.component.dialog.WaitingDialog
+import com.skyd.compone.component.navigation.LocalGlobalNavBackStack
+import com.skyd.compone.component.pointerOnBack
+import com.skyd.compone.ext.setText
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.ext.getOrNull
+import com.skyd.podaura.ext.isNetworkUrl
+import com.skyd.podaura.ext.readable
+import com.skyd.podaura.ext.safeOpenUri
+import com.skyd.podaura.model.bean.feed.FeedViewBean
+import com.skyd.podaura.model.bean.group.GroupVo
+import com.skyd.podaura.ui.component.SheetChip
+import com.skyd.podaura.ui.component.TopSnackbatHostBox
+import com.skyd.podaura.ui.component.dialog.DeleteArticleWarningDialog
+import com.skyd.podaura.ui.component.dialog.TextFieldDialog
+import com.skyd.podaura.ui.screen.feed.FeedIcon
+import com.skyd.podaura.ui.screen.feed.RefreshFeedState
+import com.skyd.podaura.ui.screen.feed.autodl.AutoDownloadRuleRoute
+import com.skyd.podaura.ui.screen.feed.requestheaders.RequestHeadersRoute
+import com.skyd.podaura.ui.screen.image.rememberImagePreviewOpener
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.article_delete_batch_result
+import podaura.shared.generated.resources.auto_download_rule_screen_name
+import podaura.shared.generated.resources.cancel
+import podaura.shared.generated.resources.clear
+import podaura.shared.generated.resources.collapse
+import podaura.shared.generated.resources.copy
+import podaura.shared.generated.resources.delete
+import podaura.shared.generated.resources.expend
+import podaura.shared.generated.resources.feed_group
+import podaura.shared.generated.resources.feed_options
+import podaura.shared.generated.resources.feed_screen_add_group
+import podaura.shared.generated.resources.feed_screen_clear_articles_warning
+import podaura.shared.generated.resources.feed_screen_delete_feed_warning
+import podaura.shared.generated.resources.feed_screen_disable_notifications
+import podaura.shared.generated.resources.feed_screen_enable_notifications
+import podaura.shared.generated.resources.feed_screen_full_refresh
+import podaura.shared.generated.resources.feed_screen_full_refresh_description
+import podaura.shared.generated.resources.feed_screen_incremental_refresh
+import podaura.shared.generated.resources.feed_screen_incremental_refresh_description
+import podaura.shared.generated.resources.feed_screen_mute_all_feeds
+import podaura.shared.generated.resources.feed_screen_mute_feed
+import podaura.shared.generated.resources.feed_screen_rss_description
+import podaura.shared.generated.resources.feed_screen_rss_description_hint
+import podaura.shared.generated.resources.feed_screen_rss_edit_icon
+import podaura.shared.generated.resources.feed_screen_rss_icon_source_local
+import podaura.shared.generated.resources.feed_screen_rss_icon_source_network
+import podaura.shared.generated.resources.feed_screen_rss_icon_source_network_hint
+import podaura.shared.generated.resources.feed_screen_rss_title
+import podaura.shared.generated.resources.feed_screen_rss_url
+import podaura.shared.generated.resources.feed_screen_sort_xml_articles_on_update
+import podaura.shared.generated.resources.feed_screen_sort_xml_articles_on_update_tip
+import podaura.shared.generated.resources.feed_screen_unmute_all_feeds
+import podaura.shared.generated.resources.feed_screen_unmute_feed
+import podaura.shared.generated.resources.image_preview_description
+import podaura.shared.generated.resources.item_selected
+import podaura.shared.generated.resources.open_link_in_browser
+import podaura.shared.generated.resources.read_all
+import podaura.shared.generated.resources.refresh
+import podaura.shared.generated.resources.reorder_feed_screen_name
+import podaura.shared.generated.resources.request_headers_screen_name
+import podaura.shared.generated.resources.reset
+import kotlin.uuid.Uuid
+
+
+@Composable
+fun EditFeedSheet(
+    feedUrl: String,
+    onDismissRequest: () -> Unit,
+    snackbarHostState: SnackbarHostState? = null,
+    viewModel: FeedSheetViewModel = koinViewModel()
+) {
+    val scope = rememberCoroutineScope()
+    val dispatch = viewModel.getDispatcher(
+        feedUrl,
+        startWith = FeedSheetIntent.Init(feedUrl)
+    )
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+
+    var openCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
+    var createGroupDialogGroup by rememberSaveable { mutableStateOf("") }
+
+    val bottomSheetSnackbarHostState = remember { SnackbarHostState() }
+
+    val bottomSheetShowing by remember {
+        derivedStateOf { uiState.editFeedDialogBean != null }
+    }
+    val currentSnackbarHostState by rememberUpdatedState(
+        if (bottomSheetShowing) bottomSheetSnackbarHostState else snackbarHostState
+    )
+    LaunchedEffect(bottomSheetShowing) {
+        if (!bottomSheetShowing) {
+            bottomSheetSnackbarHostState.currentSnackbarData?.dismiss()
+        }
+    }
+
+    MviEventListener(viewModel.singleEvent) { event ->
+        when (event) {
+            is FeedSheetEvent.EditFeedResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.RemoveFeedResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.RefreshFeedResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.CreateGroupResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.MoveFeedsToGroupResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.ReadAllResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.ClearFeedArticlesResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            is FeedSheetEvent.ClearFeedArticlesResultEvent.Success -> {
+                if (event.result.downloadProtectedCount > 0) {
+                    currentSnackbarHostState?.showSnackbar(
+                        getString(
+                            Res.string.article_delete_batch_result,
+                            event.result.deletedCount,
+                            event.result.downloadProtectedCount,
+                        )
+                    )
+                }
+            }
+
+            is FeedSheetEvent.MuteFeedResultEvent.Failed ->
+                currentSnackbarHostState?.showSnackbar(event.msg)
+
+            else -> Unit
+        }
+    }
+
+    uiState.editFeedDialogBean?.let { feedView ->
+        val notificationsEnabled by remember(viewModel, feedView.feed.url) {
+            viewModel.observeNotificationsEnabled(feedView.feed.url)
+        }.collectAsStateWithLifecycle(initialValue = true)
+        EditFeedSheet(
+            onDismissRequest = onDismissRequest,
+            snackbarHost = { SnackbarHost(hostState = bottomSheetSnackbarHostState) },
+            feedView = feedView,
+            notificationsEnabled = notificationsEnabled,
+            groups = uiState.groups.collectAsLazyPagingItems(),
+            onReadAll = { dispatch(FeedSheetIntent.ReadAllInFeed(it)) },
+            onRefresh = { feedUrl, full ->
+                dispatch(FeedSheetIntent.RefreshFeed(feedUrl, full))
+            },
+            onMute = { feedUrl, mute -> dispatch(FeedSheetIntent.MuteFeed(feedUrl, mute)) },
+            onNotificationsEnabledChanged = {
+                dispatch(
+                    FeedSheetIntent.EditFeedNotificationsEnabled(
+                        url = feedView.feed.url,
+                        enabled = it
+                    )
+                )
+            },
+            onClear = { dispatch(FeedSheetIntent.ClearFeedArticles(it)) },
+            onDelete = { dispatch(FeedSheetIntent.RemoveFeed(it)) },
+            onUrlChange = {
+                dispatch(FeedSheetIntent.EditFeedUrl(oldUrl = feedView.feed.url, newUrl = it))
+            },
+            onNicknameChange = {
+                dispatch(
+                    FeedSheetIntent.EditFeedNickname(url = feedView.feed.url, nickname = it)
+                )
+            },
+            onCustomDescriptionChange = {
+                dispatch(
+                    FeedSheetIntent.EditFeedCustomDescription(
+                        url = feedView.feed.url, customDescription = it,
+                    )
+                )
+            },
+            onCustomIconChange = {
+                dispatch(
+                    FeedSheetIntent.EditFeedCustomIcon(url = feedView.feed.url, customIcon = it)
+                )
+            },
+            onSortXmlArticlesOnUpdateChanged = {
+                dispatch(
+                    FeedSheetIntent.EditFeedSortXmlArticlesOnUpdate(
+                        url = feedView.feed.url, sort = it,
+                    )
+                )
+            },
+            onGroupChange = {
+                dispatch(
+                    FeedSheetIntent.EditFeedGroup(url = feedView.feed.url, groupId = it.groupId)
+                )
+            },
+            openCreateGroupDialog = {
+                openCreateGroupDialog = true
+                createGroupDialogGroup = ""
+            },
+            onMessage = { scope.launch { currentSnackbarHostState?.showSnackbar(it) } }
+        )
+    }
+
+    CreateGroupDialog(
+        visible = openCreateGroupDialog,
+        value = createGroupDialogGroup,
+        onValueChange = { text -> createGroupDialogGroup = text },
+        onCreateGroup = {
+            dispatch(FeedSheetIntent.CreateGroup(it))
+            openCreateGroupDialog = false
+        },
+        onDismissRequest = {
+            openCreateGroupDialog = false
+        }
+    )
+
+    WaitingDialog(
+        visible = uiState.loadingDialog || uiState.refreshFeedState != null,
+        onCancel = if (uiState.refreshFeedState != null) {
+            { dispatch(FeedSheetIntent.CancelRefreshFeed) }
+        } else null,
+        cancelEnabled = !uiState.loadingDialog &&
+                uiState.refreshFeedState == RefreshFeedState.Loading,
+    )
+}
+
+@Composable
+private fun EditFeedSheet(
+    onDismissRequest: () -> Unit,
+    snackbarHost: @Composable () -> Unit = {},
+    feedView: FeedViewBean,
+    notificationsEnabled: Boolean,
+    groups: LazyPagingItems<GroupVo>,
+    onReadAll: (String) -> Unit,
+    onRefresh: (String, Boolean) -> Unit,
+    onMute: (String, Boolean) -> Unit,
+    onNotificationsEnabledChanged: (Boolean) -> Unit,
+    onClear: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onUrlChange: (String) -> Unit,
+    onNicknameChange: (String?) -> Unit,
+    onCustomDescriptionChange: (String?) -> Unit,
+    onCustomIconChange: (String?) -> Unit,
+    onSortXmlArticlesOnUpdateChanged: (Boolean) -> Unit,
+    onGroupChange: (GroupVo) -> Unit,
+    openCreateGroupDialog: () -> Unit,
+    onMessage: (String) -> Unit,
+) {
+    val globalNavBackStack = LocalGlobalNavBackStack.current
+    val feed = feedView.feed
+    var openUrlDialog by rememberSaveable { mutableStateOf(false) }
+    var url by rememberSaveable(feed.url) { mutableStateOf(feed.url) }
+    var openNicknameDialog by rememberSaveable { mutableStateOf(false) }
+    var nickname by rememberSaveable(feed.nickname, feed.title) {
+        mutableStateOf(feed.nickname ?: feed.title)
+    }
+    var openCustomDescriptionDialog by rememberSaveable { mutableStateOf(false) }
+    var customDescription by rememberSaveable(feed.customDescription, feed.description) {
+        mutableStateOf(feed.customDescription ?: feed.description)
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier.pointerOnBack(onBack = onDismissRequest),
+        sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
+            InfoArea(
+                feedView = feedView,
+                onCustomIconChange = onCustomIconChange,
+                onNicknameChanged = { openNicknameDialog = true },
+                onCustomDescriptionChanged = { openCustomDescriptionDialog = true },
+                onMessage = onMessage,
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // URL
+            LinkArea(link = feed.url, onLinkClick = { openUrlDialog = true })
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Options
+            OptionArea(
+                sortXmlArticlesOnUpdate = feed.sortXmlArticlesOnUpdate,
+                mute = feed.mute,
+                notificationsEnabled = notificationsEnabled,
+                onReadAll = { onReadAll(feed.url) },
+                onRefresh = { onRefresh(feed.url, it) },
+                onMuteChanged = { onMute(feed.url, it) },
+                onNotificationsEnabledChanged = onNotificationsEnabledChanged,
+                onClear = { onClear(feed.url) },
+                onDelete = {
+                    onDelete(feed.url)
+                    onDismissRequest()
+                },
+                onSortXmlArticlesOnUpdateChanged = onSortXmlArticlesOnUpdateChanged,
+                onAutoDownload = { globalNavBackStack.add(AutoDownloadRuleRoute(feedUrl = feed.url)) },
+                onEditRequestHeaders = { globalNavBackStack.add(RequestHeadersRoute(feedUrl = feed.url)) },
+                onMessage = onMessage,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Group
+            GroupArea(
+                currentGroupId = feed.groupId,
+                groups = groups,
+                onGroupChange = onGroupChange,
+                openCreateGroupDialog = openCreateGroupDialog,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        TopSnackbatHostBox(snackbarHost = snackbarHost)
+    }
+
+    TextFieldDialog(
+        onDismissRequest = {
+            openUrlDialog = false
+            url = feed.url
+        },
+        visible = openUrlDialog,
+        titleText = stringResource(Res.string.feed_screen_rss_url),
+        value = url,
+        onValueChange = { url = it },
+        onConfirm = {
+            onUrlChange(it)
+            openUrlDialog = false
+        }
+    )
+
+    TextFieldDialog(
+        onDismissRequest = {
+            openNicknameDialog = false
+            nickname = feed.nickname
+        },
+        visible = openNicknameDialog,
+        maxLines = 1,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = stringResource(Res.string.feed_screen_rss_title))
+                Spacer(modifier = Modifier.weight(1f))
+                ComponeIconButton(
+                    onClick = {
+                        onNicknameChange(null)
+                        nickname = feed.title
+                        openNicknameDialog = false
+                    },
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = stringResource(Res.string.reset),
+                )
+            }
+        },
+        value = nickname.orEmpty(),
+        onValueChange = { nickname = it },
+        enableConfirm = { !nickname.isNullOrBlank() },
+        onConfirm = {
+            onNicknameChange(it)
+            openNicknameDialog = false
+        }
+    )
+
+    TextFieldDialog(
+        onDismissRequest = {
+            openCustomDescriptionDialog = false
+            customDescription = feed.customDescription
+        },
+        visible = openCustomDescriptionDialog,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = stringResource(Res.string.feed_screen_rss_description))
+                Spacer(modifier = Modifier.weight(1f))
+                ComponeIconButton(
+                    onClick = {
+                        onCustomDescriptionChange(null)
+                        customDescription = feed.description
+                        openCustomDescriptionDialog = false
+                    },
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = stringResource(Res.string.reset),
+                )
+            }
+        },
+        value = customDescription.orEmpty(),
+        onValueChange = { customDescription = it },
+        enableConfirm = { true },
+        onConfirm = {
+            onCustomDescriptionChange(it)
+            openCustomDescriptionDialog = false
+        }
+    )
+}
+
+@Composable
+private fun InfoArea(
+    feedView: FeedViewBean,
+    onCustomIconChange: (String?) -> Unit,
+    onNicknameChanged: () -> Unit,
+    onCustomDescriptionChanged: () -> Unit,
+    onMessage: (String) -> Unit,
+) {
+    val feed = feedView.feed
+    val imagePreviewOpener = rememberImagePreviewOpener()
+    Row {
+        val pickCustomIconLauncher = rememberFilePickerLauncher(
+            type = FileKitType.Image
+        ) { file ->
+            if (file != null) {
+                onCustomIconChange(file.toString())
+            }
+        }
+        var openEditIconDialog by rememberSaveable { mutableStateOf(false) }
+        var openNetworkIconDialog by rememberSaveable { mutableStateOf(false) }
+        val previewImage = feed.customIcon.orEmpty().ifBlank { feed.icon.orEmpty() }
+
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable { openEditIconDialog = true },
+        ) {
+            FeedIcon(data = feed, size = 48.dp)
+            Icon(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .size(20.dp)
+                    .padding(4.dp),
+                imageVector = Icons.Filled.Edit,
+                contentDescription = stringResource(Res.string.feed_screen_rss_edit_icon),
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.align(Alignment.CenterVertically)) {
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onNicknameChanged),
+                text = feedView.feed.nickname ?: feed.title.orEmpty(),
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val description = (feed.customDescription ?: feed.description.orEmpty())
+                .readable().trim()
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onCustomDescriptionChanged),
+                text = description.ifBlank {
+                    stringResource(Res.string.feed_screen_rss_description_hint)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (description.isBlank()) MaterialTheme.colorScheme.outline
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        if (openEditIconDialog) {
+            EditIconDialog(
+                onDismissRequest = { openEditIconDialog = false },
+                onPreview = if (previewImage.isBlank()) null else {
+                    {
+                        openEditIconDialog = false
+                        imagePreviewOpener.open(previewImage)
+                    }
+                },
+                onLocal = {
+                    pickCustomIconLauncher.launch()
+                    openEditIconDialog = false
+                },
+                onNetwork = {
+                    openNetworkIconDialog = true
+                    openEditIconDialog = false
+                },
+                onRemove = {
+                    onCustomIconChange(null)
+                    openEditIconDialog = false
+                },
+            )
+        }
+
+        var networkIcon by rememberSaveable(feed.customIcon) {
+            mutableStateOf(if (feed.customIcon?.isNetworkUrl() == true) feed.customIcon else "")
+        }
+        if (openNetworkIconDialog) {
+            TextFieldDialog(
+                onDismissRequest = { openNetworkIconDialog = false },
+                titleText = stringResource(Res.string.feed_screen_rss_icon_source_network),
+                value = networkIcon,
+                onValueChange = { networkIcon = it },
+                placeholder = stringResource(Res.string.feed_screen_rss_icon_source_network_hint),
+                enableConfirm = { networkIcon.isNetworkUrl() },
+                onConfirm = {
+                    runCatching {
+                        onCustomIconChange(it)
+                    }.onSuccess {
+                        openNetworkIconDialog = false
+                    }.onFailure { e ->
+                        Logger.e("Network icon failed", e)
+                        e.message?.let { msg -> onMessage(msg) }
+                    }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LinkArea(link: String, onLinkClick: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var openMenu by rememberSaveable { mutableStateOf(false) }
+    val clipboard = LocalClipboard.current
+    val uriHandler = LocalUriHandler.current
+
+    // For correct DropdownMenu position
+    Box {
+        SheetChip(
+            modifier = Modifier.fillMaxWidth(),
+            icon = Icons.Outlined.Link,
+            text = link,
+            contentDescription = stringResource(Res.string.feed_screen_rss_url),
+            onClick = onLinkClick,
+            onLongClick = { openMenu = true },
+            onRightClick = { openMenu = true },
+            onIconClick = { uriHandler.safeOpenUri(link) },
+        )
+
+        DropdownMenuPopup(expanded = openMenu, onDismissRequest = { openMenu = false }) {
+            val texts = listOf(
+                stringResource(Res.string.open_link_in_browser),
+                stringResource(Res.string.copy)
+            )
+            val leadingIcons = listOf(
+                Icons.Outlined.OpenInBrowser,
+                Icons.Outlined.ContentCopy
+            )
+            val onClicks = listOf(
+                {
+                    uriHandler.safeOpenUri(link)
+                    openMenu = false
+                },
+                {
+                    scope.launch { clipboard.setText(link) }
+                    openMenu = false
+                }
+            )
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                texts.forEachIndexed { index, text ->
+                    DropdownMenuItem(
+                        text = { Text(text = text) },
+                        shape = MenuDefaults.itemShape(index, texts.size).shape,
+                        leadingIcon = {
+                            Icon(imageVector = leadingIcons[index], contentDescription = null)
+                        },
+                        onClick = onClicks[index],
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun OptionArea(
+    deleteWarningText: String = stringResource(Res.string.feed_screen_delete_feed_warning),
+    sortXmlArticlesOnUpdate: Boolean? = null,
+    mute: Boolean? = null,
+    notificationsEnabled: Boolean? = null,
+    onReadAll: () -> Unit,
+    onRefresh: (full: Boolean) -> Unit,
+    onMuteChanged: ((Boolean) -> Unit)? = null,
+    onNotificationsEnabledChanged: ((Boolean) -> Unit)? = null,
+    onMuteAll: ((Boolean) -> Unit)? = null,
+    onClear: () -> Unit,
+    onDelete: (() -> Unit)?,
+    onSortXmlArticlesOnUpdateChanged: ((Boolean) -> Unit)? = null,
+    onAutoDownload: (() -> Unit)? = null,
+    onEditRequestHeaders: (() -> Unit)? = null,
+    onReorderFeedsInGroup: (() -> Unit)? = null,
+    onMessage: (String) -> Unit,
+) {
+    var openClearWarningDialog by rememberSaveable { mutableStateOf(false) }
+    var openDeleteWarningDialog by rememberSaveable { mutableStateOf(false) }
+    var openRefreshDialog by rememberSaveable { mutableStateOf(false) }
+
+    Text(
+        text = stringResource(Res.string.feed_options),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
+    FlowRow(
+        modifier = Modifier.padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SheetChip(
+            icon = Icons.Outlined.DoneAll,
+            text = stringResource(Res.string.read_all),
+            onClick = onReadAll,
+        )
+        SheetChip(
+            icon = Icons.Outlined.Refresh,
+            text = stringResource(Res.string.refresh),
+            onClick = { onRefresh(false) },
+            onLongClick = { openRefreshDialog = true },
+            onRightClick = { openRefreshDialog = true },
+        )
+        if (onMuteChanged != null && mute != null) {
+            SheetChip(
+                icon = if (mute) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                text = stringResource(if (mute) Res.string.feed_screen_unmute_feed else Res.string.feed_screen_mute_feed),
+                onClick = { onMuteChanged(!mute) },
+            )
+        }
+        if (onNotificationsEnabledChanged != null && notificationsEnabled != null) {
+            SheetChip(
+                icon = if (notificationsEnabled) Icons.Outlined.NotificationsOff
+                else Icons.Outlined.NotificationsActive,
+                text = stringResource(
+                    if (notificationsEnabled) Res.string.feed_screen_disable_notifications
+                    else Res.string.feed_screen_enable_notifications
+                ),
+                onClick = { onNotificationsEnabledChanged(!notificationsEnabled) },
+            )
+        }
+        if (onMuteAll != null) {
+            SheetChip(
+                icon = Icons.AutoMirrored.Outlined.VolumeOff,
+                text = stringResource(Res.string.feed_screen_mute_all_feeds),
+                onClick = { onMuteAll(true) },
+            )
+            SheetChip(
+                icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                text = stringResource(Res.string.feed_screen_unmute_all_feeds),
+                onClick = { onMuteAll(false) },
+            )
+        }
+        SheetChip(
+            icon = Icons.Outlined.ClearAll,
+            text = stringResource(Res.string.clear),
+            onClick = { openClearWarningDialog = true },
+        )
+        if (onDelete != null) {
+            SheetChip(
+                icon = Icons.Outlined.Delete,
+                iconBackgroundColor = MaterialTheme.colorScheme.error,
+                iconTint = MaterialTheme.colorScheme.onError,
+                text = stringResource(Res.string.delete),
+                onClick = { openDeleteWarningDialog = true },
+            )
+        }
+        if (sortXmlArticlesOnUpdate != null) {
+            SheetChip(
+                icon = if (sortXmlArticlesOnUpdate) Icons.Filled.ToggleOn
+                else Icons.Outlined.ToggleOff,
+                text = stringResource(Res.string.feed_screen_sort_xml_articles_on_update),
+                onClick = {
+                    onSortXmlArticlesOnUpdateChanged?.invoke(!sortXmlArticlesOnUpdate)
+                    if (!sortXmlArticlesOnUpdate) {
+                        onMessage(blockString(Res.string.feed_screen_sort_xml_articles_on_update_tip))
+                    }
+                },
+            )
+        }
+        if (onAutoDownload != null) {
+            SheetChip(
+                icon = Icons.Outlined.Download,
+                text = stringResource(Res.string.auto_download_rule_screen_name),
+                onClick = onAutoDownload,
+            )
+        }
+        if (onEditRequestHeaders != null) {
+            SheetChip(
+                icon = Icons.Outlined.Http,
+                text = stringResource(Res.string.request_headers_screen_name),
+                onClick = onEditRequestHeaders,
+            )
+        }
+        if (onReorderFeedsInGroup != null) {
+            SheetChip(
+                icon = Icons.AutoMirrored.Outlined.Sort,
+                text = stringResource(Res.string.reorder_feed_screen_name),
+                onClick = onReorderFeedsInGroup,
+            )
+        }
+    }
+
+    DeleteArticleWarningDialog(
+        visible = openClearWarningDialog,
+        text = stringResource(Res.string.feed_screen_clear_articles_warning),
+        onDismissRequest = { openClearWarningDialog = false },
+        onDismiss = { openClearWarningDialog = false },
+        onConfirm = onClear,
+    )
+
+    DeleteWarningDialog(
+        visible = openDeleteWarningDialog,
+        text = deleteWarningText,
+        onDismissRequest = { openDeleteWarningDialog = false },
+        onDismiss = { openDeleteWarningDialog = false },
+        onConfirm = { onDelete?.invoke() },
+    )
+
+    RefreshDialog(
+        visible = openRefreshDialog,
+        onDismissRequest = { openRefreshDialog = false },
+        onRefresh = onRefresh,
+    )
+}
+
+@Composable
+private fun RefreshDialog(
+    visible: Boolean,
+    onDismissRequest: () -> Unit,
+    onRefresh: (full: Boolean) -> Unit,
+) {
+    val textsRes = remember {
+        listOf(
+            Res.string.feed_screen_incremental_refresh,
+            Res.string.feed_screen_full_refresh
+        )
+    }
+    var currentIndex by rememberSaveable { mutableIntStateOf(0) }
+
+    ComponeDialog(
+        visible = visible,
+        onDismissRequest = onDismissRequest,
+        icon = { Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null) },
+        title = { Text(text = stringResource(Res.string.refresh)) },
+        selectable = false,
+        text = {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        space = ButtonGroupDefaults.ConnectedSpaceBetween,
+                        alignment = Alignment.CenterHorizontally,
+                    ),
+                ) {
+                    textsRes.forEachIndexed { index, textRes ->
+                        ToggleButton(
+                            checked = index == currentIndex,
+                            onCheckedChange = { if (it) currentIndex = index },
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { role = Role.RadioButton },
+                            shapes = ButtonGroupDefaults.connectedButtonShapes(textsRes, index),
+                        ) {
+                            Text(stringResource(textRes))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(22.dp))
+                Text(
+                    stringResource(
+                        if (currentIndex == 0) Res.string.feed_screen_incremental_refresh_description
+                        else Res.string.feed_screen_full_refresh_description
+                    )
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(Res.string.cancel))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismissRequest()
+                onRefresh(currentIndex == 1)
+            }) {
+                Text(text = stringResource(Res.string.refresh))
+            }
+        },
+    )
+}
+
+@Composable
+internal fun GroupArea(
+    title: String = stringResource(Res.string.feed_group),
+    currentGroupId: String?,
+    groups: LazyPagingItems<GroupVo>,
+    onGroupChange: (GroupVo) -> Unit,
+    openCreateGroupDialog: () -> Unit,
+) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
+    var flowRowMaxLines by rememberSaveable { mutableIntStateOf(3) }
+    val moreOrCollapseIndicator = @Composable { scope: ContextualFlowRowOverflowScope ->
+        val remainingItems = groups.itemCount + 2 - scope.shownItemCount
+        SheetChip(
+            icon = if (remainingItems == 0) Icons.Outlined.ExpandLess
+            else Icons.Outlined.ExpandMore,
+            text = null,
+            contentDescription = stringResource(
+                if (remainingItems == 0) Res.string.collapse else Res.string.expend
+            ),
+            onClick = {
+                if (remainingItems == 0) {
+                    flowRowMaxLines = 3
+                } else {
+                    flowRowMaxLines += 2
+                }
+            },
+        )
+    }
+    ContextualFlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .wrapContentHeight(align = Alignment.Top),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        maxLines = flowRowMaxLines,
+        overflow = ContextualFlowRowOverflow.expandOrCollapseIndicator(
+            minRowsToShowCollapse = 5,
+            expandIndicator = moreOrCollapseIndicator,
+            collapseIndicator = moreOrCollapseIndicator
+        ),
+        itemCount = groups.itemCount + 2
+    ) { index ->
+        when (index) {
+            0 -> SheetChip(
+                icon = Icons.Outlined.Add,
+                text = null,
+                contentDescription = stringResource(Res.string.feed_screen_add_group),
+                onClick = openCreateGroupDialog,
+            )
+
+            1 -> {
+                val selected =
+                    currentGroupId == null || currentGroupId == GroupVo.DefaultGroup.groupId
+                SheetChip(
+                    icon = if (selected) Icons.Outlined.Check else null,
+                    text = GroupVo.DefaultGroup.name,
+                    contentDescription = if (selected) stringResource(Res.string.item_selected) else null,
+                    onClick = {
+                        if (GroupVo.DefaultGroup.groupId != currentGroupId) {
+                            onGroupChange(GroupVo.DefaultGroup)
+                        }
+                    },
+                )
+            }
+
+            else -> {
+                val group = groups.getOrNull(index - 2)
+                if (group != null) {
+                    val selected = (currentGroupId ?: GroupVo.DefaultGroup.groupId) == group.groupId
+                    SheetChip(
+                        modifier = Modifier.animateContentSize(),
+                        icon = if (selected) Icons.Outlined.Check else null,
+                        text = group.name,
+                        contentDescription = if (selected) stringResource(Res.string.item_selected) else null,
+                        onClick = { if (group.groupId != currentGroupId) onGroupChange(group) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditIconDialog(
+    onDismissRequest: () -> Unit,
+    onPreview: (() -> Unit)?,
+    onLocal: () -> Unit,
+    onNetwork: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    ComponeDialog(
+        onDismissRequest = onDismissRequest,
+        icon = { Icon(imageVector = Icons.Outlined.Image, contentDescription = null) },
+        title = { Text(text = stringResource(Res.string.feed_screen_rss_edit_icon)) },
+        text = {
+            Column {
+                if (onPreview != null) {
+                    ListItem(
+                        modifier = Modifier.clickable(onClick = onPreview),
+                        headlineContent = {
+                            Text(text = stringResource(Res.string.image_preview_description))
+                        },
+                        leadingContent = {
+                            Icon(imageVector = Icons.Outlined.ZoomIn, contentDescription = null)
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    HorizontalDivider()
+                }
+                ListItem(
+                    modifier = Modifier.clickable(onClick = onLocal),
+                    headlineContent = { Text(text = stringResource(Res.string.feed_screen_rss_icon_source_local)) },
+                    leadingContent = {
+                        Icon(imageVector = Icons.Outlined.PhoneAndroid, contentDescription = null)
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                HorizontalDivider()
+                ListItem(
+                    modifier = Modifier.clickable(onClick = onNetwork),
+                    headlineContent = { Text(text = stringResource(Res.string.feed_screen_rss_icon_source_network)) },
+                    leadingContent = {
+                        Icon(imageVector = Icons.Outlined.Public, contentDescription = null)
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                HorizontalDivider()
+                ListItem(
+                    modifier = Modifier.clickable(onClick = onRemove),
+                    headlineContent = { Text(text = stringResource(Res.string.delete)) },
+                    leadingContent = {
+                        Icon(imageVector = Icons.Outlined.Delete, contentDescription = null)
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+            }
+        },
+        selectable = false,
+        confirmButton = {},
+    )
+}
+
+@Composable
+private fun CreateGroupDialog(
+    visible: Boolean,
+    value: String,
+    onValueChange: (String) -> Unit,
+    onCreateGroup: (GroupVo) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    TextFieldDialog(
+        visible = visible,
+        icon = { Icon(imageVector = Icons.Outlined.Workspaces, contentDescription = null) },
+        titleText = stringResource(Res.string.feed_screen_add_group),
+        placeholder = stringResource(Res.string.feed_group),
+        value = value,
+        onValueChange = onValueChange,
+        onConfirm = { text ->
+            onCreateGroup(
+                GroupVo(
+                    groupId = Uuid.random().toString(),
+                    name = text,
+                    isExpanded = true,
+                )
+            )
+        },
+        onDismissRequest = onDismissRequest,
+    )
+}

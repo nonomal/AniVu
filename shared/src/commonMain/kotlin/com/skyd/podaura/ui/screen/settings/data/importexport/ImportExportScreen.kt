@@ -1,0 +1,208 @@
+package com.skyd.podaura.ui.screen.settings.data.importexport
+
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
+import com.skyd.compone.component.ComponeScaffold
+import com.skyd.compone.component.ComponeTopBar
+import com.skyd.compone.component.ComponeTopBarStyle
+import com.skyd.compone.component.blockString
+import com.skyd.compone.component.dialog.WaitingDialog
+import com.skyd.compone.component.navigation.LocalNavBackStack
+import com.skyd.fundation.ext.currentTimeMillis
+import com.skyd.fundation.ext.toAbsoluteDateTimeString
+import com.skyd.mvi.MviEventListener
+import com.skyd.mvi.getDispatcher
+import com.skyd.podaura.ext.showSnackbar
+import com.skyd.podaura.ext.validateFileName
+import com.skyd.podaura.ui.screen.settings.data.importexport.importopml.ImportOpmlRoute
+import com.skyd.podaura.util.appVersion
+import com.skyd.settings.BaseSettingsItem
+import com.skyd.settings.SettingsLazyColumn
+import io.github.vinceglb.filekit.dialogs.FileKitDialogException
+import io.github.vinceglb.filekit.dialogs.FileKitDialogSettings
+import io.github.vinceglb.filekit.dialogs.FileKitMode
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
+import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.app_name
+import podaura.shared.generated.resources.export_opml_screen_name
+import podaura.shared.generated.resources.file_saver_unavailable
+import podaura.shared.generated.resources.import_export_screen_feed_category
+import podaura.shared.generated.resources.import_export_screen_name
+import podaura.shared.generated.resources.import_export_screen_prefer_category
+import podaura.shared.generated.resources.import_opml_screen_export_prefer
+import podaura.shared.generated.resources.import_opml_screen_export_prefer_description
+import podaura.shared.generated.resources.import_opml_screen_import_prefer
+import podaura.shared.generated.resources.import_opml_screen_import_prefer_description
+import podaura.shared.generated.resources.import_opml_screen_name
+import podaura.shared.generated.resources.success_time_msg
+import kotlin.random.Random
+import kotlin.time.Clock
+
+
+@Serializable
+data object ImportExportRoute : NavKey
+
+@Composable
+fun ImportExportScreen(
+    viewModel: ImportExportViewModel = koinViewModel(),
+    windowInsets: WindowInsets = WindowInsets.safeDrawing
+) {
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val navBackStack = LocalNavBackStack.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val uiState by viewModel.viewState.collectAsStateWithLifecycle()
+    val dispatch = viewModel.getDispatcher(startWith = ImportExportIntent.Init)
+    val onFileSaverError: (FileKitDialogException) -> Unit = {
+        snackbarHostState.showSnackbar(
+            scope = scope,
+            message = Res.string.file_saver_unavailable,
+        )
+    }
+
+    val opmlSaverLauncher = rememberFileSaverLauncher(
+        dialogSettings = FileKitDialogSettings.createDefault(),
+        onError = onFileSaverError,
+    ) { file ->
+        if (file != null) {
+            dispatch(ImportExportIntent.ExportOpml(file))
+        }
+    }
+
+    val jsonPreferencePickerLauncher = rememberFilePickerLauncher(
+        type = FileKitType.File(extension = "json"),
+        mode = FileKitMode.Single,
+    ) { file ->
+        if (file != null) {
+            dispatch(ImportExportIntent.ImportPrefer(file))
+        }
+    }
+    val jsonPreferenceSaverLauncher = rememberFileSaverLauncher(
+        dialogSettings = FileKitDialogSettings.createDefault(),
+        onError = onFileSaverError,
+    ) { file ->
+        if (file != null) {
+            dispatch(ImportExportIntent.ExportPrefer(file))
+        }
+    }
+
+    ComponeScaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            ComponeTopBar(
+                style = ComponeTopBarStyle.LargeFlexible,
+                scrollBehavior = scrollBehavior,
+                title = { Text(text = stringResource(Res.string.import_export_screen_name)) },
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
+        },
+        contentWindowInsets = windowInsets
+    ) { innerPadding ->
+        SettingsLazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = innerPadding,
+        ) {
+            group(text = { getString(Res.string.import_export_screen_feed_category) }) {
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.FileDownload),
+                        text = stringResource(Res.string.import_opml_screen_name),
+                        descriptionText = null,
+                        onClick = { navBackStack.add(ImportOpmlRoute()) }
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.FileUpload),
+                        text = stringResource(Res.string.export_opml_screen_name),
+                        descriptionText = null,
+                        onClick = {
+                            val appName = blockString(Res.string.app_name)
+                            val time = Clock.currentTimeMillis().toAbsoluteDateTimeString()
+                            val random = Random.nextInt(0, Int.MAX_VALUE)
+                            opmlSaverLauncher.launch(
+                                suggestedName = "${appName}_${time}_${random}".validateFileName(),
+                                defaultExtension = "opml"
+                            )
+                        }
+                    )
+                }
+            }
+            group(text = { getString(Res.string.import_export_screen_prefer_category) }) {
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.FileDownload),
+                        text = stringResource(Res.string.import_opml_screen_import_prefer),
+                        descriptionText = stringResource(Res.string.import_opml_screen_import_prefer_description),
+                        onClick = { jsonPreferencePickerLauncher.launch() },
+                    )
+                }
+                item {
+                    BaseSettingsItem(
+                        icon = rememberVectorPainter(Icons.Outlined.FileUpload),
+                        text = stringResource(Res.string.import_opml_screen_export_prefer),
+                        descriptionText = stringResource(Res.string.import_opml_screen_export_prefer_description),
+                        onClick = {
+                            val appName = blockString(Res.string.app_name)
+                            val time = Clock.currentTimeMillis().toAbsoluteDateTimeString()
+                            jsonPreferenceSaverLauncher.launch(
+                                suggestedName = "${appName}_${appVersion.name}_preferences_${time}".validateFileName(),
+                                defaultExtension = "json"
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    MviEventListener(viewModel.singleEvent) { event ->
+        when (event) {
+            is ImportExportEvent.ExportResultEvent.Failed -> snackbarHostState.showSnackbar(event.msg)
+            is ImportExportEvent.ImportResultEvent.Failed -> snackbarHostState.showSnackbar(event.msg)
+            is ImportExportEvent.ExportOpmlResultEvent.Failed ->
+                snackbarHostState.showSnackbar(event.msg)
+
+            is ImportExportEvent.ExportResultEvent.Success -> snackbarHostState.showSnackbar(
+                getString(Res.string.success_time_msg, event.time / 1000f),
+            )
+
+            is ImportExportEvent.ImportResultEvent.Success -> snackbarHostState.showSnackbar(
+                getString(Res.string.success_time_msg, event.time / 1000f),
+            )
+
+            is ImportExportEvent.ExportOpmlResultEvent.Success -> snackbarHostState.showSnackbar(
+                getString(Res.string.success_time_msg, event.time / 1000f),
+            )
+        }
+    }
+
+    WaitingDialog(visible = uiState.loadingDialog)
+}

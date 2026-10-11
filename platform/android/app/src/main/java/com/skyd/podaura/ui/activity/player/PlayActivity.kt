@@ -1,0 +1,256 @@
+package com.skyd.podaura.ui.activity.player
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.PictureInPictureParams
+import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.ServiceConnection
+import android.content.res.Configuration
+import android.os.Build
+import android.os.Bundle
+import android.os.IBinder
+import android.view.KeyEvent
+import android.view.WindowManager
+import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import com.skyd.podaura.ext.getOrDefault
+import com.skyd.podaura.ext.getString
+import com.skyd.podaura.ext.safeLaunch
+import com.skyd.podaura.ext.savePictureToMediaStore
+import com.skyd.podaura.model.preference.dataStore
+import com.skyd.podaura.model.preference.player.BackgroundPlayPreference
+import com.skyd.podaura.model.preference.player.PlayerAutoPipPreference
+import com.skyd.podaura.ui.activity.BaseComposeActivity
+import com.skyd.podaura.ui.component.showToast
+import com.skyd.podaura.ui.player.PlatformPlayerEntry
+import com.skyd.podaura.ui.player.PlayerArticleContextViewModel
+import com.skyd.podaura.ui.player.PlayerCommand
+import com.skyd.podaura.ui.player.PlayerOpenRequest
+import com.skyd.podaura.ui.player.PlayerViewModel
+import com.skyd.podaura.ui.player.PlayerViewRoute
+import com.skyd.podaura.ui.player.coordinator.isReady
+import com.skyd.podaura.ui.player.service.PlayerService
+import io.github.vinceglb.filekit.PlatformFile
+import kotlinx.coroutines.launch
+import org.koin.androidx.viewmodel.ext.android.viewModel
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.player_no_permission_cannot_save_screenshot
+import java.util.UUID
+
+
+class PlayActivity : BaseComposeActivity() {
+    private val viewModel: PlayerViewModel by viewModel()
+    private val articleContextViewModel: PlayerArticleContextViewModel by viewModel()
+    private var launchRequestId: String = ""
+    private val playerEntry by lazy { PlatformPlayerEntry(this, ::openAccepted) }
+    private lateinit var picture: PlatformFile
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            picture.savePictureToMediaStore(this)
+        } else {
+            getString(Res.string.player_no_permission_cannot_save_screenshot).showToast()
+        }
+    }
+
+    private lateinit var service: PlayerService
+    private var serviceBound by mutableStateOf(false)
+    private var receiverRegistered = false
+    private var serviceBindingRequested = false
+    private val pipDismissal = PipDismissalTracker()
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as PlayerService.PlayerServiceBinder
+            if (this@PlayActivity.isDestroyed) {
+                unbindService(this)
+                if (!dataStore.getOrDefault(BackgroundPlayPreference)) {
+                    binder.getService().stopSelf()
+                }
+                return
+            }
+            this@PlayActivity.service = binder.getService()
+            this@PlayActivity.service.playbackSession.apply {
+                setPlayerVisible(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+                setPictureInPictureActive(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode)
+            }
+            lifecycleScope.launch {
+                viewModel.mediaInfos.collect { launchData ->
+                    this@PlayActivity.service.playerCoordinator.onCommand(
+                        launchData.toLoadCommand()
+                    )
+                }
+            }
+
+            serviceBound = true
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            serviceBound = false
+            finish()
+        }
+    }
+
+    private val serviceStopReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (context == null || intent == null) return
+            if (intent.action == PlayerService.FINISH_PLAY_ACTIVITY_ACTION) {
+                finish()
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this) { onPlayerBack() }
+        launchRequestId = savedInstanceState?.getString(LAUNCH_REQUEST_ID_KEY)
+            ?: UUID.randomUUID().toString()
+        addOnNewIntentListener { newIntent ->
+            intent = newIntent
+            launchRequestId = UUID.randomUUID().toString()
+            playerEntry.open(newIntent.toPlayerOpenRequest(launchRequestId))
+        }
+        playerEntry.open(intent.toPlayerOpenRequest(launchRequestId))
+    }
+
+    private fun openAccepted(request: PlayerOpenRequest) {
+        when (request) {
+            is PlayerOpenRequest.Media -> viewModel.handlePlayDataMode(
+                request.mode,
+                request.requestId
+            )
+
+            is PlayerOpenRequest.Files -> viewModel.handlePlatformFiles(
+                request.files,
+                request.requestId
+            )
+
+            PlayerOpenRequest.Resume -> Unit
+        }
+        if (receiverRegistered) return
+
+        // Keep screen on
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        ContextCompat.registerReceiver(
+            this,
+            serviceStopReceiver,
+            IntentFilter(PlayerService.FINISH_PLAY_ACTIVITY_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        receiverRegistered = true
+
+        val serviceIntent = Intent(this, PlayerService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
+        serviceBindingRequested = bindService(serviceIntent, connection, BIND_AUTO_CREATE)
+
+        setContentBase {
+            PlayerViewRoute(
+                coordinator = if (serviceBound) service.playerCoordinator else null,
+                articleContextViewModel = articleContextViewModel,
+                onBack = ::onPlayerBack,
+                onSaveScreenshot = {
+                    picture = it
+                    saveScreenshot()
+                },
+            )
+        }
+    }
+
+    private fun onPlayerBack() {
+        val coordinator = if (serviceBound) service.playerCoordinator else null
+        val state = coordinator?.playerState?.value
+        val supportsPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+        val shouldEnterPip = supportsPip && !isFinishing && !isDestroyed &&
+                coordinator?.engineState?.value?.isReady == true && state?.mediaStarted == true &&
+                !state.paused && dataStore.getOrDefault(PlayerAutoPipPreference)
+        if (!enterPipOnPlayerBack(
+                shouldEnterPip = shouldEnterPip,
+                inPipMode = supportsPip && isInPictureInPictureMode,
+                enterPip = { enterPictureInPictureMode(PictureInPictureParams.Builder().build()) },
+            )
+        ) finish()
+    }
+
+    override fun onDestroy() {
+        if (pipDismissal.isDismissed(isFinishing) && serviceBound) {
+            service.playerCoordinator.onCommand(PlayerCommand.Paused(true))
+        }
+        super.onDestroy()
+        if (receiverRegistered) unregisterReceiver(serviceStopReceiver)
+        if (serviceBindingRequested) unbindService(connection)
+        serviceBound = false
+        if (!dataStore.getOrDefault(BackgroundPlayPreference)) {
+            stopService(Intent(this, PlayerService::class.java))
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(inPipMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(inPipMode, newConfig)
+        pipDismissal.onModeChanged(inPipMode)
+        if (serviceBound) service.playbackSession.setPictureInPictureActive(inPipMode)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (serviceBound) service.playbackSession.setPlayerVisible(true)
+    }
+
+    override fun onStop() {
+        if (serviceBound) service.playbackSession.setPlayerVisible(false)
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // PiP is paused; RESUMED means the full player has been restored, even
+        // when its mode-change callback arrives afterwards.
+        pipDismissal.onFullPlayerResumed()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(LAUNCH_REQUEST_ID_KEY, launchRequestId)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun saveScreenshot() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            picture.savePictureToMediaStore(this)
+        } else {
+            requestPermissionLauncher.safeLaunch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (serviceBound && service.playerCoordinator.onKey(
+                androidx.compose.ui.input.key.KeyEvent(event)
+            )
+        ) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private companion object {
+        const val LAUNCH_REQUEST_ID_KEY = "launchRequestId"
+    }
+}
+
+// A failed PiP request still completes back navigation. PiP dismissal must
+// finish the activity instead of requesting another floating window.
+internal fun enterPipOnPlayerBack(
+    shouldEnterPip: Boolean,
+    inPipMode: Boolean,
+    enterPip: () -> Boolean,
+): Boolean = shouldEnterPip && !inPipMode && runCatching(enterPip).getOrDefault(false)

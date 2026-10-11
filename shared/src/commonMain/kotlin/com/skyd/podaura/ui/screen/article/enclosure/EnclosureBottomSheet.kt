@@ -1,0 +1,317 @@
+package com.skyd.podaura.ui.screen.article.enclosure
+
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.skyd.compone.component.ComponeIconButton
+import com.skyd.compone.component.TagText
+import com.skyd.compone.ext.setText
+import com.skyd.podaura.ext.fileSize
+import com.skyd.podaura.ext.getOrDefault
+import com.skyd.podaura.ext.onRightClickIfSupported
+import com.skyd.podaura.model.bean.LinkEnclosureBean
+import com.skyd.podaura.model.bean.article.ArticleWithEnclosureBean
+import com.skyd.podaura.model.bean.article.ArticleWithFeed
+import com.skyd.podaura.model.bean.article.EnclosureBean
+import com.skyd.podaura.model.download.ArticleDownloadSource
+import com.skyd.podaura.model.preference.dataStore
+import com.skyd.podaura.model.preference.rss.ParseLinkTagAsEnclosurePreference
+import com.skyd.podaura.model.repository.download.DownloadStarter
+import com.skyd.podaura.model.repository.download.rememberDownloadStarter
+import com.skyd.podaura.ui.component.AnimatedDismissModalBottomSheet
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import podaura.shared.generated.resources.Res
+import podaura.shared.generated.resources.bottom_sheet_enclosure_title
+import podaura.shared.generated.resources.copy
+import podaura.shared.generated.resources.download
+import podaura.shared.generated.resources.download_without_notifications_tip
+import podaura.shared.generated.resources.enclosure_item_link_tag
+import podaura.shared.generated.resources.open_notification_settings
+import podaura.shared.generated.resources.play
+
+fun getEnclosuresList(articleWithEnclosureBean: ArticleWithEnclosureBean): List<Any> {
+    val dataList: MutableList<Any> = articleWithEnclosureBean.enclosures.toMutableList()
+    if (dataStore.getOrDefault(ParseLinkTagAsEnclosurePreference)) {
+        articleWithEnclosureBean.article.link?.let { link ->
+            dataList += LinkEnclosureBean(link = link)
+        }
+    }
+    return dataList
+}
+
+@Composable
+fun EnclosureBottomSheet(
+    onDismissRequest: () -> Unit,
+    dataList: List<Any>,
+    article: ArticleWithFeed,
+    onPlay: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val silentDownloadMessage = stringResource(Res.string.download_without_notifications_tip)
+    val settingsAction = stringResource(Res.string.open_notification_settings)
+    val starterHolder = remember { mutableStateOf<DownloadStarter?>(null) }
+    val downloadStarter = rememberDownloadStarter {
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = silentDownloadMessage,
+                actionLabel = settingsAction,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                starterHolder.value?.openNotificationSettings()
+            }
+        }
+    }
+    SideEffect { starterHolder.value = downloadStarter }
+    val onDownload: (Any) -> Unit = remember(article, downloadStarter, scope) {
+        {
+            val url = when (it) {
+                is EnclosureBean -> it.url
+                is LinkEnclosureBean -> it.link
+                else -> null
+            }
+            if (!url.isNullOrBlank()) {
+                scope.launch {
+                    downloadStarter.download(
+                        url = url,
+                        type = (it as? EnclosureBean)?.type,
+                        articleDownloadSource = ArticleDownloadSource(
+                            articleId = article.articleWithEnclosure.article.articleId,
+                            feedUrl = article.feed.url,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    AnimatedDismissModalBottomSheet(
+        onDismissRequest = onDismissRequest
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(Res.string.bottom_sheet_enclosure_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyColumn {
+                    itemsIndexed(dataList) { index, item ->
+                        if (index > 0) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                        if (item is EnclosureBean) {
+                            EnclosureItem(
+                                enclosure = item,
+                                onDownload = onDownload,
+                                onPlay = onPlay,
+                            )
+                        } else if (item is LinkEnclosureBean) {
+                            LinkEnclosureItem(
+                                enclosure = item,
+                                onDownload = onDownload,
+                                onPlay = onPlay,
+                            )
+                        }
+                    }
+                }
+            }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnclosureItem(
+    enclosure: EnclosureBean,
+    onDownload: (EnclosureBean) -> Unit,
+    onPlay: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+
+    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            var openMenu by rememberSaveable { mutableStateOf(false) }
+            val clipboard = LocalClipboard.current
+            // For correct DropdownMenu position
+            Box {
+                Text(
+                    modifier = Modifier
+                        .combinedClickable(
+                            onLongClick = { openMenu = true },
+                            onClick = {},
+                        )
+                        .onRightClickIfSupported(onClick = { openMenu = true }),
+                    text = enclosure.url,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 4,
+                )
+                EnclosureItemMenu(
+                    expanded = openMenu,
+                    onDismissRequest = { openMenu = false },
+                    onCopy = { scope.launch { clipboard.setText(enclosure.url) } },
+                )
+            }
+            Row(modifier = Modifier.padding(top = 6.dp)) {
+                Text(
+                    text = enclosure.length.fileSize(),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+                enclosure.type.takeIf { !it.isNullOrBlank() }?.let { enclosureType ->
+                    Text(
+                        modifier = Modifier.padding(start = 16.dp),
+                        text = enclosureType,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        if (enclosure.isMedia) {
+            ComponeIconButton(
+                onClick = {
+                    try {
+                        onPlay(enclosure.url)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                },
+                imageVector = Icons.Outlined.PlayArrow,
+                contentDescription = stringResource(Res.string.play),
+            )
+        }
+        ComponeIconButton(
+            onClick = { onDownload(enclosure) },
+            imageVector = Icons.Outlined.Download,
+            contentDescription = stringResource(Res.string.download),
+        )
+    }
+}
+
+@Composable
+private fun LinkEnclosureItem(
+    enclosure: LinkEnclosureBean,
+    onDownload: (LinkEnclosureBean) -> Unit,
+    onPlay: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            var openMenu by rememberSaveable { mutableStateOf(false) }
+            val clipboard = LocalClipboard.current
+            // For correct DropdownMenu position
+            Box {
+                Text(
+                    modifier = Modifier
+                        .combinedClickable(
+                            onLongClick = { openMenu = true },
+                            onClick = {},
+                        )
+                        .onRightClickIfSupported(onClick = { openMenu = true }),
+                    text = enclosure.link,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 5,
+                )
+                EnclosureItemMenu(
+                    expanded = openMenu,
+                    onDismissRequest = { openMenu = false },
+                    onCopy = { scope.launch { clipboard.setText(enclosure.link) } },
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            TagText(text = stringResource(Res.string.enclosure_item_link_tag), fontSize = 10.sp)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        if (enclosure.isMedia) {
+            ComponeIconButton(
+                onClick = {
+                    try {
+                        onPlay(enclosure.link)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                },
+                imageVector = Icons.Outlined.PlayArrow,
+                contentDescription = stringResource(Res.string.play),
+            )
+        }
+        ComponeIconButton(
+            onClick = { onDownload(enclosure) },
+            imageVector = Icons.Outlined.Download,
+            contentDescription = stringResource(Res.string.download),
+        )
+    }
+}
+
+@Composable
+private fun EnclosureItemMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    DropdownMenuPopup(expanded = expanded, onDismissRequest = onDismissRequest) {
+        val texts = listOf(stringResource(Res.string.copy))
+        val leadingIcons = listOf(Icons.Outlined.ContentCopy)
+        val onClicks = listOf {
+            onCopy()
+            onDismissRequest()
+        }
+        DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+            texts.forEachIndexed { index, text ->
+                DropdownMenuItem(
+                    text = { Text(text = text) },
+                    shape = MenuDefaults.itemShape(index, texts.size).shape,
+                    leadingIcon = {
+                        Icon(imageVector = leadingIcons[index], contentDescription = null)
+                    },
+                    onClick = onClicks[index],
+                )
+            }
+        }
+    }
+}
